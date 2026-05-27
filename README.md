@@ -131,6 +131,37 @@ can spread, before they can be copied, and before they can become permanent.
 
 ---
 
+## A Note on Scope: Two Levels of Architecture Governance
+
+The fitness functions in this demo (controller → repository, domain → infrastructure) are
+**code design rules** — the kind a tech lead or development lead codifies to keep a single
+service internally consistent. They are useful for demonstrating *how* ArchUnit works as a
+mechanism, but they are **not what Enterprise Architecture teams primarily govern**.
+
+EA operates at a different altitude:
+
+| Level | Governed by | Concerns |
+|-------|-------------|---------|
+| **Code design** | Tech lead, development lead | Class layering, dependency inversion, package structure within a service |
+| **Service design** | Senior engineer, architect | Domain model integrity, internal modularity, test coverage |
+| **Enterprise Architecture** | EA team, Architecture Council | Bounded context boundaries, cross-domain coupling, event-driven compliance, API contract standards, platform-wide technology standards, security posture, observability baseline |
+
+The EA question is not "does this controller call a repository?" — it is:
+
+> "Does the Loyalty domain import classes from the Order domain? Is the Analytics service
+> reading directly from the Order database? Are delivery partner SDKs leaking into domain
+> logic? Is the post-order flow synchronously coupled to three consuming services in a way
+> that turns one team's outage into every team's outage?"
+
+Those are bounded context, platform, and resilience concerns — and they have real
+production consequences. The Q3 2025 loyalty points incident in the
+[architecture-skill-demo](architecture-skill-demo/) example was caused by exactly the kind
+of cross-domain synchronous coupling that an EA-level fitness function would have blocked.
+
+**See [`architecture-skill-demo/`](architecture-skill-demo/) for the EA-level governance story.**
+
+---
+
 ## Architecture Governance at Enterprise Scale: A QSR Pattern
 
 ### The Problem With Documented Standards
