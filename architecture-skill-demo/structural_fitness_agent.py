@@ -353,8 +353,7 @@ def main() -> None:
     print(f"  Agent complete.")
     print(f"{'=' * 70}")
     print(f"\n  Run the fitness functions:")
-    print(f"    cd .. && mvn test surefire-report:report-only -Dmaven.test.failure.ignore=true")
-    print(f"    open target/site/surefire-report.html\n")
+    print(f"    python3 run_tests.py\n")
 
 
 if __name__ == "__main__":
