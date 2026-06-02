@@ -1,0 +1,11 @@
+# Secrets
+.env
+
+# Maven build output
+target/
+
+# Generated test output (re-created by run_skill.py on each run)
+generated-tests/
+
+# macOS
+.DS_Store

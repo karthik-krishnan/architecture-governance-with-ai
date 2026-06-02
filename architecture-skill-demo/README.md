@@ -108,16 +108,23 @@ teaches engineers to suppress or ignore the gate. That is worse than no governan
 ```
 architecture-skill-demo/
 ├── skill.md                               ← The advisor skill definition and evaluation lenses
+├── run_skill.py                           ← Live demo runner — calls the Claude API
 │
 ├── inputs/                                ← What you feed the skill
 │   ├── service-description.md             ← Platform overview: domains, ownership, integrations
 │   ├── architecture-standards.md          ← Enterprise standards the platform must meet
 │   └── current-codebase-summary.md        ← Codebase scan results: violations, gaps, risks
 │
-└── outputs/                               ← What the skill produces
-    ├── architecture-review-report.md      ← EA-level findings with business impact framing
-    ├── recommended-fitness-functions.md   ← Advisory + enforced candidates, prioritised
-    └── generated-archunit-tests.java      ← ArchUnit rule candidates for architect review
+├── samples/                               ← Pre-written examples of skill output (for reference)
+│   ├── architecture-review-report.md
+│   ├── recommended-fitness-functions.md
+│   └── generated-archunit-tests.java
+│
+└── outputs/                               ← Live-generated output lands here (empty until you run)
+    └── live-<timestamp>/
+        ├── architecture-review-report.md
+        ├── recommended-fitness-functions.md
+        └── generated-archunit-tests.java
 ```
 
 ---
@@ -145,7 +152,40 @@ The concerns in this folder are what EA actually cares about:
 
 ## How to Use the Skill
 
-Invoke the advisor by providing the three input files as context:
+### Option A — Run It Live (Recommended for Stakeholder Demo)
+
+`run_skill.py` calls the Claude API in real time so you can watch the AI generate the
+review from scratch.  This makes the AI skill tangible — the outputs aren't static files,
+they are produced live from the inputs.
+
+```bash
+# 1. Set your Anthropic API key
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# 2. Run the live demo
+cd architecture-skill-demo
+python3 run_skill.py
+```
+
+The script:
+- Loads `skill.md` as the AI's operating instructions (the "skill")
+- Loads the three files in `inputs/` as the review context
+- Calls `claude-opus-4-7` with adaptive thinking enabled
+- Streams the response to the terminal as it is generated
+- Saves the output to `outputs/live-architecture-review-<timestamp>.md`
+
+You can then compare the live output with the pre-authored examples in `outputs/` to see
+how the skill shapes the analysis.
+
+### Option B — Sample Outputs
+
+The `samples/` directory contains pre-authored examples showing the kind of output the
+skill produces.  These are useful for reviewing the format before running the live demo.
+
+### Invoke the Skill in Any Claude Session
+
+You can also invoke the advisor directly in any Claude conversation by pasting the three
+input files as context and using this prompt:
 
 > "Using the Architecture Fitness Function Advisor skill, review the QSR platform described
 > in service-description.md against the standards in architecture-standards.md, given the
