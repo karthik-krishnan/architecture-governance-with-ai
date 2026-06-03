@@ -82,7 +82,7 @@ def collect_adrs() -> str:
 
 
 def collect_specs() -> str:
-    specs_dir = GOVERNANCE_DIR / "specs"
+    specs_dir = GOVERNANCE_DIR / "standards"
     docs = sorted(specs_dir.rglob("*.md")) + sorted(specs_dir.rglob("*.yaml")) + sorted(specs_dir.rglob("*.json"))
     if not docs:
         return "(no specs found)"
@@ -161,7 +161,7 @@ def run_generator(client: AnthropicFoundry, scan_output: str, model: str) -> str
 
     generator_skill = read_file(SKILLS_DIR / "archunit-generator.md")
     service_desc    = read_file(PROJECT_DIR / "service-description.md")
-    arch_standards  = read_file(GOVERNANCE_DIR / "architecture-standards.md")
+    arch_standards  = read_file(GOVERNANCE_DIR / "standards" / "architecture-standards.md")
     adrs            = collect_adrs()
     specs           = collect_specs()
 
@@ -248,7 +248,7 @@ def main() -> None:
     print(f"  Codebase  : {codebase_path}")
     print(f"  Java files: {len(java_files)}")
     print(f"  ADRs      : {len(list((GOVERNANCE_DIR / 'adrs').glob('*.md')))}")
-    print(f"  Specs     : {len(list((GOVERNANCE_DIR / 'specs').rglob('*.*')))}")
+    print(f"  Standards : {len(list((GOVERNANCE_DIR / 'standards').rglob('*.*')))}")
     print("=" * 70)
 
     client = AnthropicFoundry(

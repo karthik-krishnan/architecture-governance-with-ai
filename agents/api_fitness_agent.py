@@ -66,7 +66,7 @@ OPENAPI_FILE  = GENERATED_DIR / "openapi.yaml"
 RULESET_FILE  = GOVERNANCE_DIR / "spectral-ruleset.yaml"
 JUNIT_FILE    = GENERATED_DIR / "spectral-junit.xml"
 
-STYLE_GUIDE_PATH = GOVERNANCE_DIR / "specs" / "api-style-guide.md"
+STYLE_GUIDE_PATH = GOVERNANCE_DIR / "standards" / "api-style-guide.md"
 SHA_PREFIX       = "# style-guide-sha256: "
 
 MAX_LINT_ITERATIONS = 3

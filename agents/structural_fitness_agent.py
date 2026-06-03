@@ -105,7 +105,7 @@ def collect_adrs() -> str:
 
 
 def collect_specs() -> str:
-    specs_dir = GOVERNANCE_DIR / "specs"
+    specs_dir = GOVERNANCE_DIR / "standards"
     docs = (sorted(specs_dir.rglob("*.md"))
             + sorted(specs_dir.rglob("*.yaml"))
             + sorted(specs_dir.rglob("*.json")))
@@ -143,7 +143,7 @@ def compute_governance_hash() -> str:
         h.update(adr.name.encode())
         h.update(adr.read_bytes())
 
-    specs_dir = GOVERNANCE_DIR / "specs"
+    specs_dir = GOVERNANCE_DIR / "standards"
     for spec in sorted(specs_dir.rglob("*")):
         if spec.is_file():
             h.update(str(spec.relative_to(specs_dir)).encode())
@@ -252,7 +252,7 @@ def run_generator_agent(client: AnthropicFoundry, model: str) -> str:
 
     generator_skill = read_file(SKILLS_DIR / "archunit-generator.md")
     service_desc    = read_file(PROJECT_DIR / "service-description.md")
-    arch_standards  = read_file(GOVERNANCE_DIR / "architecture-standards.md")
+    arch_standards  = read_file(GOVERNANCE_DIR / "standards" / "architecture-standards.md")
     adrs            = collect_adrs()
     specs           = collect_specs()
 
@@ -376,7 +376,7 @@ def main() -> None:
     print(f"  Model     : {model}")
     print(f"  Codebase  : {codebase_path}  ({len(java_files)} files)")
     print(f"  ADRs      : {len(list((INPUTS_DIR / 'adrs').glob('*.md')))}")
-    print(f"  Specs     : {len(list((INPUTS_DIR / 'specs').rglob('*.*')))}")
+    print(f"  Standards : {len(list((GOVERNANCE_DIR / 'standards').rglob('*.*')))}")
     print(f"  Max verify attempts : {MAX_COMPILE_ITERATIONS}")
     tests_status = "regenerate" if args.refresh_tests else ("governance changed — will regenerate" if stale else "current")
     print(f"  Tests     : {tests_status}")

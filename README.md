@@ -79,8 +79,7 @@ architecture-governance-with-ai/
     │
     ├── architecture/                ← company-wide EA artefacts (inputs to the agents)
     │   ├── adrs/                    ← Architecture Decision Records
-    │   ├── specs/                   ← API style guide and other technical standards
-    │   └── architecture-standards.md
+    │   └── standards/               ← API style guide and architecture standards
     │
     └── projects/
         └── order-service/           ← a Java microservice being governed
@@ -156,8 +155,7 @@ The `example-company/` directory is a template. Replace it with your own:
 your-company/
 ├── architecture/
 │   ├── adrs/               ← your Architecture Decision Records
-│   ├── specs/              ← your API style guide, event schemas, etc.
-│   └── architecture-standards.md
+│   └── standards/          ← your API style guide, architecture standards, etc.
 │
 └── projects/
     └── your-service/
