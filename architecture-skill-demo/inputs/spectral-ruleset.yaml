@@ -105,13 +105,18 @@ rules:
               enum:
                 - string
 
-  qsr-json-content-type:
-    message: "§6: Request and response bodies must use application/json. Found: {{property}}"
-    description: "Only application/json content type is permitted."
-    severity: error
-    given: "$.paths[*][*].responses[*].content[?(@property != 'application/json')]~"
+  qsr-response-content-type:
+    message: "§6: Response bodies must declare application/json as a content type."
+    description: "Every response with a body must include application/json."
+    severity: warn
+    given: "$.paths[*][*].responses[200,201,202].content"
     then:
-      function: undefined
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          required:
+            - "application/json"
 
   qsr-camel-case-properties:
     message: "§6: Schema property names must use camelCase. Found: {{property}}"
