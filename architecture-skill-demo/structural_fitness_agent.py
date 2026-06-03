@@ -374,13 +374,13 @@ def main() -> None:
     print(f"  ADRs      : {len(list((INPUTS_DIR / 'adrs').glob('*.md')))}")
     print(f"  Specs     : {len(list((INPUTS_DIR / 'specs').rglob('*.*')))}")
     print(f"  Max verify attempts : {MAX_COMPILE_ITERATIONS}")
-    tests_status = "regenerate" if args.refresh_tests else ("stale — will regenerate" if stale else "up-to-date")
+    tests_status = "regenerate" if args.refresh_tests else ("governance changed — will regenerate" if stale else "current")
     print(f"  Tests     : {tests_status}")
     print("=" * 70)
 
     if not stale:
-        print(f"\n  Generated tests are current — governance inputs unchanged.")
-        print(f"  Skipping AI phases. Use --refresh-tests to force regeneration.\n")
+        print(f"\n  Governance rules unchanged — committed tests are current.")
+        print(f"  Use --refresh-tests to force regeneration.\n")
         return
 
     # Credentials only required when we are about to call the AI

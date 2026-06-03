@@ -560,7 +560,7 @@ def main() -> None:
     print(f"  Provider  : Azure AI Foundry")
     print(f"  Model     : {model}")
     print(f"  Codebase  : {codebase_path}  ({len(source_files)} files)")
-    ruleset_status = "regenerate" if args.refresh_ruleset else ("stale — will regenerate" if stale else "up-to-date")
+    ruleset_status = "regenerate" if args.refresh_ruleset else ("style guide changed — will regenerate" if stale else "current")
     print(f"  Ruleset   : {ruleset_status}")
     print("=" * 70)
 
@@ -591,7 +591,7 @@ def main() -> None:
         print(f"  Ruleset saved : {RULESET_FILE.relative_to(SKILL_DIR)}")
     else:
         print(f"\n{'─' * 70}")
-        print(f"  Ruleset Generation  (skipped — style guide unchanged)")
+        print(f"  Ruleset Generation  (style guide unchanged — committed ruleset is current)")
         print(f"{'─' * 70}")
 
     # Phase 4: Spectral lint — read-only against the committed ruleset
