@@ -21,6 +21,7 @@ Prerequisites:
 import hashlib
 import os
 import re
+import shutil
 import sys
 import subprocess
 import argparse
@@ -112,15 +113,45 @@ paths:
 # Prerequisites check
 # ---------------------------------------------------------------------------
 
-def check_spectral() -> None:
-    result = subprocess.run(
-        ["spectral", "--version"], capture_output=True, text=True
+def resolve_spectral() -> list[str]:
+    """Return the command prefix used to invoke Spectral.
+
+    Resolution order:
+      1. 'spectral' on PATH  (global npm install, nvm, volta, etc.)
+      2. Common nvm prefix   (/Users/<user>/.nvm/versions/node/*/bin/spectral)
+      3. npx fallback        (works when spectral is a local devDependency)
+
+    Exits with a helpful message if none of the above succeed.
+    """
+    # 1. PATH lookup — covers global installs and active nvm/volta environments
+    if shutil.which("spectral"):
+        return ["spectral"]
+
+    # 2. nvm glob — covers the case where nvm is installed but the current
+    #    process was not launched from a fully-initialised nvm shell
+    import glob
+    nvm_pattern = os.path.expanduser("~/.nvm/versions/node/*/bin/spectral")
+    nvm_hits = sorted(glob.glob(nvm_pattern), reverse=True)  # newest node first
+    if nvm_hits:
+        return [nvm_hits[0]]
+
+    # 3. npx fallback — slower but requires no global install
+    if shutil.which("npx"):
+        try:
+            r = subprocess.run(
+                ["npx", "--yes", "@stoplight/spectral-cli", "--version"],
+                capture_output=True, text=True, timeout=60,
+            )
+            if r.returncode == 0:
+                return ["npx", "--yes", "@stoplight/spectral-cli"]
+        except Exception:
+            pass
+
+    sys.exit(
+        "Spectral CLI not found.\n"
+        "Install it with:  npm install -g @stoplight/spectral-cli\n"
+        "Then restart your terminal (or re-run 'nvm use') so the binary is on PATH."
     )
-    if result.returncode != 0:
-        sys.exit(
-            "spectral CLI not found.\n"
-            "Install it with:  npm install -g @stoplight/spectral-cli"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +247,8 @@ def validate_openapi(yaml_text: str) -> str:
 
 
 def spectral_lint(openapi_path: pathlib.Path,
-                  ruleset_path: pathlib.Path) -> tuple[int, str, str]:
+                  ruleset_path: pathlib.Path,
+                  spectral_cmd: list[str]) -> tuple[int, str, str]:
     """Run spectral lint.
 
     Returns (returncode, spectral_error, junit_xml).
@@ -227,11 +259,11 @@ def spectral_lint(openapi_path: pathlib.Path,
       2+ — Spectral runtime error (invalid ruleset YAML, unrecognised function, etc.)
 
     spectral_error is non-empty only when returncode >= 2 (i.e. Spectral failed to
-    run the ruleset).  Violations (exit 1) are NOT errors — they are the point.
+    run the ruleset).  Violations (rc == 1) are NOT errors — they are the point.
     """
     text_result = subprocess.run(
-        ["spectral", "lint", str(openapi_path),
-         "--ruleset", str(ruleset_path), "--format", "text"],
+        spectral_cmd + ["lint", str(openapi_path),
+                        "--ruleset", str(ruleset_path), "--format", "text"],
         capture_output=True, text=True, timeout=60,
     )
     rc = text_result.returncode
@@ -240,8 +272,8 @@ def spectral_lint(openapi_path: pathlib.Path,
     spectral_error = (text_result.stdout + text_result.stderr) if rc >= 2 else ""
 
     junit_result = subprocess.run(
-        ["spectral", "lint", str(openapi_path),
-         "--ruleset", str(ruleset_path), "--format", "junit"],
+        spectral_cmd + ["lint", str(openapi_path),
+                        "--ruleset", str(ruleset_path), "--format", "junit"],
         capture_output=True, text=True, timeout=60,
     )
     junit_xml = junit_result.stdout
@@ -366,7 +398,8 @@ def run_spec_generator(client: AnthropicFoundry, scan_output: str, model: str) -
 # Phase 3 — Generate Spectral ruleset
 # ---------------------------------------------------------------------------
 
-def run_ruleset_generator(client: AnthropicFoundry, model: str) -> str:
+def run_ruleset_generator(client: AnthropicFoundry, model: str,
+                          spectral_cmd: list[str]) -> str:
     """Generate a Spectral ruleset from the API style guide.
 
     Mirrors the structural agent's compile-check loop: after each generation
@@ -425,7 +458,7 @@ def run_ruleset_generator(client: AnthropicFoundry, model: str) -> str:
         probe_path.write_text(_RULESET_VALIDATION_PROBE, encoding="utf-8")
         candidate_path.write_text(ruleset_yaml, encoding="utf-8")
 
-        rc, spectral_error, _ = spectral_lint(probe_path, candidate_path)
+        rc, spectral_error, _ = spectral_lint(probe_path, candidate_path, spectral_cmd)
 
         probe_path.unlink(missing_ok=True)
         candidate_path.unlink(missing_ok=True)
@@ -465,7 +498,7 @@ def run_ruleset_generator(client: AnthropicFoundry, model: str) -> str:
 # Phase 4 — Verify: spectral lint loop
 # ---------------------------------------------------------------------------
 
-def run_spectral_lint_phase(spec_yaml: str) -> None:
+def run_spectral_lint_phase(spec_yaml: str, spectral_cmd: list[str]) -> None:
     """
     Phase 4 — lint the generated OpenAPI spec against the committed ruleset.
 
@@ -482,7 +515,7 @@ def run_spectral_lint_phase(spec_yaml: str) -> None:
 
     OPENAPI_FILE.write_text(spec_yaml, encoding="utf-8")
 
-    rc, spectral_error, junit_xml = spectral_lint(OPENAPI_FILE, RULESET_FILE)
+    rc, spectral_error, junit_xml = spectral_lint(OPENAPI_FILE, RULESET_FILE, spectral_cmd)
 
     if junit_xml:
         JUNIT_FILE.write_text(junit_xml, encoding="utf-8")
@@ -527,7 +560,7 @@ def main() -> None:
     global MAX_LINT_ITERATIONS
     MAX_LINT_ITERATIONS = int(os.environ.get("MAX_LINT_ITERATIONS", "3"))
 
-    check_spectral()
+    spectral_cmd = resolve_spectral()
 
     endpoint = os.environ.get("AZURE_INFERENCE_ENDPOINT", "").rstrip("/")
     api_key  = os.environ.get("AZURE_INFERENCE_KEY")
@@ -561,6 +594,7 @@ def main() -> None:
     print(f"  Model     : {model}")
     print(f"  Codebase  : {codebase_path}  ({len(source_files)} files)")
     ruleset_status = "regenerate" if args.refresh_ruleset else ("style guide changed — will regenerate" if stale else "current")
+    print(f"  Spectral  : {' '.join(spectral_cmd)}")
     print(f"  Ruleset   : {ruleset_status}")
     print("=" * 70)
 
@@ -586,7 +620,7 @@ def main() -> None:
         print(f"\n{'─' * 70}")
         print(f"  Ruleset Generation  (style guide changed — regenerating)")
         print(f"{'─' * 70}")
-        ruleset_yaml = run_ruleset_generator(client, model)
+        ruleset_yaml = run_ruleset_generator(client, model, spectral_cmd)
         RULESET_FILE.write_text(ruleset_yaml, encoding="utf-8")
         print(f"  Ruleset saved : {RULESET_FILE.relative_to(SKILL_DIR)}")
     else:
@@ -595,7 +629,7 @@ def main() -> None:
         print(f"{'─' * 70}")
 
     # Phase 4: Spectral lint — read-only against the committed ruleset
-    run_spectral_lint_phase(spec_yaml)
+    run_spectral_lint_phase(spec_yaml, spectral_cmd)
 
     # Save reference copy of the spec in outputs/
     (out_dir / "openapi.yaml").write_text(spec_yaml, encoding="utf-8")
