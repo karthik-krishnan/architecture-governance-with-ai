@@ -36,7 +36,7 @@ GENERATED_XML   = REPORTS_DIR / "TEST-com.example.governance.GeneratedFitnessFun
 
 # API reset targets
 OPENAPI_FILE    = GENERATED_SPECS / "openapi.yaml"
-RULESET_FILE    = GENERATED_SPECS / "spectral-ruleset.yaml"
+RULESET_FILE    = SCRIPT_DIR / "inputs" / "spectral-ruleset.yaml"  # committed; lives in inputs/
 JUNIT_FILE      = GENERATED_SPECS / "spectral-junit.xml"
 
 MAX_VIOLATIONS_SHOWN = 5

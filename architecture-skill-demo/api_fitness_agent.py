@@ -18,6 +18,7 @@ Prerequisites:
     npm install -g @stoplight/spectral-cli
 """
 
+import hashlib
 import os
 import re
 import sys
@@ -58,8 +59,11 @@ SKILLS_DIR    = SKILL_DIR / "skills"
 MAVEN_ROOT    = SKILL_DIR.parent
 GENERATED_DIR = MAVEN_ROOT / "generated-specs"
 OPENAPI_FILE  = GENERATED_DIR / "openapi.yaml"
-RULESET_FILE  = GENERATED_DIR / "spectral-ruleset.yaml"
+RULESET_FILE  = INPUTS_DIR / "spectral-ruleset.yaml"   # committed; auto-regenerates when style guide changes
 JUNIT_FILE    = GENERATED_DIR / "spectral-junit.xml"
+
+STYLE_GUIDE_PATH = INPUTS_DIR / "specs" / "api-style-guide.md"
+SHA_PREFIX       = "# style-guide-sha256: "
 
 MAX_LINT_ITERATIONS = 3
 
@@ -116,6 +120,40 @@ def strip_yaml_fences(text: str) -> str:
     text = re.sub(r"^```(?:yaml)?\n", "", text)
     text = re.sub(r"\n```$", "", text)
     return text.strip()
+
+
+# ---------------------------------------------------------------------------
+# SHA-256 staleness helpers
+# ---------------------------------------------------------------------------
+
+def compute_sha256(path: pathlib.Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def extract_ruleset_sha256(ruleset_path: pathlib.Path) -> str | None:
+    """Return the SHA256 embedded in the first line of the ruleset, or None."""
+    if not ruleset_path.exists():
+        return None
+    first_line = ruleset_path.read_text(encoding="utf-8").split("\n", 1)[0]
+    m = re.match(r"#\s*style-guide-sha256:\s*([0-9a-f]{64})", first_line)
+    return m.group(1) if m else None
+
+
+def ruleset_is_stale() -> bool:
+    """True if the ruleset doesn't exist or was built from a different style guide."""
+    current_sha   = compute_sha256(STYLE_GUIDE_PATH)
+    embedded_sha  = extract_ruleset_sha256(RULESET_FILE)
+    return current_sha != embedded_sha
+
+
+def ensure_sha_comment(ruleset_yaml: str, sha: str) -> str:
+    """Guarantee the SHA comment is the very first line of the ruleset YAML."""
+    header = f"{SHA_PREFIX}{sha}"
+    lines = ruleset_yaml.split("\n")
+    # Strip any existing (possibly stale) sha comment
+    if lines and re.match(r"#\s*style-guide-sha256:", lines[0]):
+        lines = lines[1:]
+    return header + "\n" + "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +315,7 @@ def run_spec_generator(client: AnthropicFoundry, scan_output: str, model: str) -
 def run_ruleset_generator(client: AnthropicFoundry, model: str) -> str:
 
     generator_skill = read_file(SKILLS_DIR / "spectral-ruleset-generator.md")
-    api_style_guide = read_file(INPUTS_DIR / "specs" / "api-style-guide.md")
+    api_style_guide = read_file(STYLE_GUIDE_PATH)
 
     system = (
         "You are a senior platform architect operating the Spectral Ruleset Generator skill. "
@@ -303,7 +341,10 @@ def run_ruleset_generator(client: AnthropicFoundry, model: str) -> str:
             print(text, end="", flush=True)
             collected.append(text)
     print()
-    return strip_yaml_fences("".join(collected))
+
+    ruleset_yaml = strip_yaml_fences("".join(collected))
+    sha = compute_sha256(STYLE_GUIDE_PATH)
+    return ensure_sha_comment(ruleset_yaml, sha)
 
 
 # ---------------------------------------------------------------------------
@@ -311,9 +352,15 @@ def run_ruleset_generator(client: AnthropicFoundry, model: str) -> str:
 # ---------------------------------------------------------------------------
 
 def run_verify_loop(client: AnthropicFoundry, spec_yaml: str,
-                    ruleset_yaml: str, model: str) -> tuple[str, str]:
-
+                    ruleset_yaml: str, style_guide_sha: str,
+                    model: str) -> tuple[str, str]:
+    """
+    Lint spec against ruleset; ask the model to fix errors up to MAX_LINT_ITERATIONS.
+    style_guide_sha is re-embedded into the ruleset after every correction so the
+    SHA comment is never lost.
+    """
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+    INPUTS_DIR.mkdir(parents=True, exist_ok=True)
     correction_messages: list[dict] = []
 
     for attempt in range(1, MAX_LINT_ITERATIONS + 1):
@@ -385,9 +432,11 @@ def run_verify_loop(client: AnthropicFoundry, spec_yaml: str,
             ruleset_match = re.search(r"=== SPECTRAL RULESET ===\n(.*?)$", raw, re.DOTALL)
 
             if spec_match:
-                spec_yaml    = strip_yaml_fences(spec_match.group(1).strip())
+                spec_yaml = strip_yaml_fences(spec_match.group(1).strip())
             if ruleset_match:
-                ruleset_yaml = strip_yaml_fences(ruleset_match.group(1).strip())
+                # Re-embed the SHA comment so the model can't accidentally lose it
+                corrected = strip_yaml_fences(ruleset_match.group(1).strip())
+                ruleset_yaml = ensure_sha_comment(corrected, style_guide_sha)
 
     # Save final versions even if lint did not fully pass
     OPENAPI_FILE.write_text(spec_yaml, encoding="utf-8")
@@ -411,6 +460,10 @@ def main() -> None:
         "--codebase", type=pathlib.Path,
         default=SKILL_DIR.parent / "src",
         help="Path to source root (default: ../src)",
+    )
+    parser.add_argument(
+        "--refresh-ruleset", action="store_true",
+        help="Force regeneration of the Spectral ruleset even if the style guide hasn't changed",
     )
     args = parser.parse_args()
 
@@ -443,8 +496,12 @@ def main() -> None:
     out_dir   = SKILL_DIR / "outputs" / f"api-{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+    INPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
     source_files = collect_source_files(codebase_path)
+
+    # Determine whether Phase 3 (ruleset generation) is needed
+    stale = args.refresh_ruleset or ruleset_is_stale()
 
     print("\n" + "=" * 70)
     print("  API & Integration Fitness Agent")
@@ -453,6 +510,8 @@ def main() -> None:
     print(f"  Model     : {model}")
     print(f"  Codebase  : {codebase_path}  ({len(source_files)} files)")
     print(f"  Max verify attempts : {MAX_LINT_ITERATIONS}")
+    ruleset_status = "regenerate" if args.refresh_ruleset else ("stale — will regenerate" if stale else "up-to-date")
+    print(f"  Ruleset   : {ruleset_status}")
     print("=" * 70)
 
     client = AnthropicFoundry(
@@ -472,18 +531,27 @@ def main() -> None:
     # Phase 2: Generate spec
     spec_yaml = run_spec_generator(client, scan_output, model)
 
-    # Phase 3: Generate ruleset
-    ruleset_yaml = run_ruleset_generator(client, model)
+    # Phase 3: Generate ruleset (skipped when style guide is unchanged)
+    if stale:
+        ruleset_yaml = run_ruleset_generator(client, model)
+    else:
+        print(f"\n{'─' * 70}")
+        print(f"  PHASE 3 — Spectral Ruleset  (skipped — style guide unchanged)")
+        print(f"{'─' * 70}")
+        ruleset_yaml = read_file(RULESET_FILE)
 
-    # Phase 4: Verify
-    spec_yaml, ruleset_yaml = run_verify_loop(client, spec_yaml, ruleset_yaml, model)
+    # Phase 4: Verify (may correct ruleset; SHA comment preserved inside loop)
+    style_guide_sha = compute_sha256(STYLE_GUIDE_PATH)
+    spec_yaml, ruleset_yaml = run_verify_loop(
+        client, spec_yaml, ruleset_yaml, style_guide_sha, model
+    )
 
     # Save reference copies in outputs/
     (out_dir / "openapi.yaml").write_text(spec_yaml, encoding="utf-8")
     (out_dir / "spectral-ruleset.yaml").write_text(ruleset_yaml, encoding="utf-8")
 
     print(f"  Spec saved    : {out_dir.name}/openapi.yaml")
-    print(f"  Ruleset saved : {out_dir.name}/spectral-ruleset.yaml")
+    print(f"  Ruleset saved : {RULESET_FILE.relative_to(SKILL_DIR)}")
 
     print(f"\n{'=' * 70}")
     print(f"  Agent complete.")
