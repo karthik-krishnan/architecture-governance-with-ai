@@ -158,15 +158,15 @@ def load_surefire_report(xml_path: pathlib.Path) -> dict:
 # Parse Spectral JUnit XML
 # ---------------------------------------------------------------------------
 
-def load_ruleset_rule_ids() -> list[str]:
+def load_ruleset_rule_ids(ruleset_path: pathlib.Path) -> list[str]:
     """Return all rule IDs defined in the committed Spectral ruleset, in order.
 
     Uses a simple regex (no extra dependency) — rule IDs sit at exactly two
     spaces of indent as YAML mapping keys directly under `rules:`.
     """
-    if not RULESET_FILE.exists():
+    if not ruleset_path.exists():
         return []
-    content = RULESET_FILE.read_text(encoding="utf-8")
+    content = ruleset_path.read_text(encoding="utf-8")
     # Match lines like "  qsr-some-rule-name:" (exactly 2-space indent, kebab-case id)
     return re.findall(r"^  ([a-z][a-z0-9-]+):\s*$", content, re.MULTILINE)
 
@@ -253,7 +253,8 @@ def decode_spectral_location(json_ptr: str) -> str:
     return unquote(decoded)
 
 
-def load_spectral_report(xml_path: pathlib.Path) -> dict:
+def load_spectral_report(xml_path: pathlib.Path,
+                         ruleset_path: pathlib.Path | None = None) -> dict:
     """Parse spectral --format junit output.
 
     Spectral emits one <testcase> per *violation* — passing rules are absent.
@@ -321,7 +322,8 @@ def load_spectral_report(xml_path: pathlib.Path) -> dict:
             rule_violations.setdefault(rule_id, []).append(detail)
 
     # Read all rule IDs from the committed ruleset so we can show passing rules too
-    all_rule_ids = load_ruleset_rule_ids()
+    effective_ruleset = ruleset_path if ruleset_path is not None else RULESET_FILE
+    all_rule_ids = load_ruleset_rule_ids(effective_ruleset)
 
     if all_rule_ids:
         # Failing rules first (prominent), then passing rules
@@ -781,7 +783,7 @@ def main() -> None:
             reports.append(load_surefire_report(xml_file))
 
     if junit_file.exists():
-        reports.append(load_spectral_report(junit_file))
+        reports.append(load_spectral_report(junit_file, ruleset_path=ruleset_file))
 
     if not reports:
         sys.exit(
