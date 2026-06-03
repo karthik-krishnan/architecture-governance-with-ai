@@ -1,4 +1,4 @@
-# Restaurant Order Service — Architecture Governance with AI
+# Architecture Governance with AI
 
 This project demonstrates how architecture governance can be **automated and AI-assisted**
 at enterprise scale using two complementary approaches:
