@@ -19,17 +19,17 @@ All API paths must include a version prefix as the first path segment.
 - Both the old and new version must be supported for a minimum of 90 days after a new version ships
 - Deprecation notice must be published to the API catalogue before the countdown starts
 
-**Correct:**  `/v2/orders/{orderId}`  
-**Incorrect:** `/orders/{orderId}`, `/api/orders/{orderId}`, `/v2.1/orders/{orderId}`
+**Correct:**  `/v2/records/{recordId}`  
+**Incorrect:** `/records/{recordId}`, `/api/records/{recordId}`, `/v2.1/records/{recordId}`
 
 ---
 
 ## 2. Resource Naming
 
-- Path segments use **kebab-case**: `/loyalty-accounts`, `/menu-items`
-- Resources are **plural nouns**: `/orders` not `/order`, `/payments` not `/payment`
-- Nested resources for ownership relationships only: `/orders/{orderId}/items`
-- Actions that do not map to CRUD use a verb suffix on the resource: `/orders/{orderId}/cancel`
+- Path segments use **kebab-case**: `/user-accounts`, `/line-items`
+- Resources are **plural nouns**: `/records` not `/record`, `/events` not `/event`
+- Nested resources for ownership relationships only: `/records/{recordId}/items`
+- Actions that do not map to CRUD use a verb suffix on the resource: `/records/{recordId}/cancel`
 
 ---
 
@@ -72,8 +72,8 @@ All error responses must follow this structure:
 
 ```json
 {
-  "code": "ORDER_NOT_FOUND",
-  "message": "No order found with id f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "code": "RECORD_NOT_FOUND",
+  "message": "No record found with id f47ac10b-58cc-4372-a567-0e02b2c3d479",
   "correlationId": "3d6f4aa0-1c3a-4b8e-9df2-7e1a3c5f9b2d"
 }
 ```

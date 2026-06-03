@@ -17,8 +17,8 @@ Each bounded context is the **sole authority** over its own data. No other domai
 - Store a copy of another domain's core entity data except via published integration events
 
 **Rationale:** Direct coupling between domain data models makes it impossible to evolve,
-replatform, or scale domains independently. It was a primary cause of the 2022 loyalty
-outage, where a schema change in Order Management broke the Loyalty service.
+replatform, or scale domains independently. It was a primary cause of a 2022 production
+outage, where a schema change in one service broke its downstream consumers.
 
 **Measurement:** The percentage of cross-domain dependencies routed through published
 APIs or events (target: 100% by end of 2026).
@@ -38,33 +38,31 @@ Any operation that changes state in more than one domain **must** be implemented
 - Request/response interactions with strict consistency requirements (e.g., payment authorisation)
 
 **Synchronous calls are not acceptable for:**
-- Post-order operations: loyalty points award, analytics ingestion, kitchen ticket creation
+- Any state-change notification to a downstream domain
 - Any operation where the consuming domain's failure should not affect the producing domain
 
-**Rationale:** The Loyalty team cannot serve customers when the Order service is degraded.
-This coupling transfers the Order service's availability SLO onto the Loyalty SLO, which is
-not owned or staffed by the same team.
+**Rationale:** Synchronous coupling transfers the producing domain's availability SLO onto
+every consuming domain it calls. One team's degradation cascades into every upstream team's
+incident.
 
 ---
 
 ## Standard 3 — Anti-Corruption Layers for External Partners
 
-All integrations with third-party systems (delivery partners, payment processors, POS
-vendors, franchise management platforms) **must** be encapsulated behind an Anti-Corruption
-Layer (ACL):
+All integrations with third-party systems (external APIs, SaaS platforms, partner systems)
+**must** be encapsulated behind an Anti-Corruption Layer (ACL):
 
 - The ACL translates between the external partner's model and the internal domain model
 - No external partner SDK class, data model, or protocol detail may appear outside the `infrastructure.adapters` package
 - The ACL must be independently versioned and testable in isolation
-- Partner-specific branching logic (`if partner == DoorDash`) must live in the ACL, not in domain or application logic
+- Partner-specific branching logic must live in the ACL, not in domain or application logic
 
-**Approved delivery partner integration pattern:**
+**Approved external integration pattern:**
 ```
-DeliveryOrchestrationService (application)
-    └── DeliveryPartnerPort (interface, application layer)
-            └── DoorDashAdapter (infrastructure.adapters)
-            └── UberEatsAdapter (infrastructure.adapters)
-            └── SkipAdapter (infrastructure.adapters)
+ApplicationService (application)
+    └── ExternalPartnerPort (interface, application layer)
+            └── PartnerAAdapter (infrastructure.adapters)
+            └── PartnerBAdapter (infrastructure.adapters)
 ```
 
 ---
@@ -94,9 +92,9 @@ Every service in production must emit:
 | Structured logs | JSON format, mandatory fields: `traceId`, `spanId`, `serviceId`, `environment`, `severity` |
 | Metrics | RED metrics (Rate, Errors, Duration) on all public endpoints; emitted to Datadog |
 | Health endpoints | `/actuator/health/liveness` and `/actuator/health/readiness` |
-| Business events | Order placement, payment authorisation, loyalty redemption must emit audit events to the audit Kafka topic |
+| Business events | All significant state-change events must emit audit events to the audit Kafka topic |
 
-**PII in telemetry is prohibited.** Customer email addresses, loyalty IDs, card numbers, or
+**PII in telemetry is prohibited.** Personal data fields (email addresses, identifiers, card numbers, or
 any field classified as PII under the data classification policy must not appear in:
 - Log messages (structured fields or free text)
 - Trace span attributes
@@ -112,7 +110,7 @@ any field classified as PII under the data classification policy must not appear
 | Service-to-service auth | OAuth2 client credentials flow via Keycloak; network trust alone is not sufficient |
 | Customer-facing auth | OAuth2 PKCE flow; JWT validation via the approved `platform-security-lib` only |
 | Secrets management | All credentials injected via HashiCorp Vault; no secrets in config files, environment variables, or source code |
-| PCI-DSS boundary | Only the Payment Processing service may handle card data; all other services must use a token reference |
+| Sensitive data boundary | Only designated services may handle sensitive regulated data; all others must use token references |
 | Custom crypto | Prohibited — use platform-approved libraries only |
 | Approved security library | `com.example.platform:platform-security-lib` (JWT validation, OAuth client, audit logging) |
 

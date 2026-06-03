@@ -8,9 +8,8 @@
 
 ## Context
 
-The Example Company digital platform is decomposed into independent bounded contexts: Order Management,
-Loyalty, Fulfilment, Payment, Inventory, and Analytics.
-Each context is owned by a separate engineering team with its own release cadence and SLO.
+The platform is decomposed into independent bounded contexts, each owned by a separate
+engineering team with its own release cadence and SLO.
 
 As the platform has grown, teams have taken shortcuts — importing domain entities and
 repository interfaces directly from other contexts rather than using published APIs or
@@ -35,8 +34,7 @@ without exception:
 
 ## Naming Conventions
 
-- Bounded context root package: `com.example.{context}`  
-  e.g. `com.example.order`, `com.example.loyalty`, `com.example.kitchen`
+- Bounded context root package: `com.example.{context}`
 - Repository classes: suffix `Repository`
 - Domain entity classes: reside in `*.domain.*` package
 - Infrastructure classes: reside in `*.infrastructure.*` package

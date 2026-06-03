@@ -3,7 +3,7 @@
 **Status:** Accepted  
 **Date:** 2025-10-20  
 **Deciders:** Architecture Council  
-**Trigger:** Q3 2025 P1 incident — loyalty points lost during peak load
+**Trigger:** Q3 2025 P1 incident — downstream service data loss during peak load
 
 ---
 
@@ -11,37 +11,33 @@
 
 ### The Incident
 
-On 2025-08-14 during a peak trading window, the Order service made synchronous HTTP calls
-to the Loyalty service as part of the order completion flow. When Loyalty service latency
-increased under load, those calls timed out. Orders appeared to fail from the customer's
-perspective even though payment had completed. Approximately 12,000 loyalty point awards
-were silently dropped.
+During a peak load window, a service made synchronous HTTP calls to a downstream service
+as part of a state-change flow. When the downstream service latency increased under load,
+those calls timed out. The upstream operation appeared to fail from the client's perspective
+even though the primary transaction had completed. A significant number of downstream
+state updates were silently dropped.
 
-Root cause: the Order service's SLO was implicitly extended to cover the Loyalty service's
-availability. One team's degradation became every upstream team's incident.
+Root cause: the upstream service's SLO was implicitly extended to cover the downstream
+service's availability. One team's degradation became every upstream team's incident.
 
 ### The Pattern
 
-This is not isolated to Order → Loyalty. The same synchronous coupling exists in:
-- Order → Kitchen Display (ticket creation blocks order confirmation response)
-- Order → Analytics (event push blocks order completion flow)
-
-Any synchronous call from one bounded context to another in a state-change flow
-creates this failure mode.
+This is not isolated to one integration. The same synchronous coupling exists across
+multiple service boundaries in state-change flows. Any synchronous call from one bounded
+context to another during a state-change creates this failure mode.
 
 ## Decision
 
-Post-order state change flows must not make synchronous HTTP calls into consuming
-bounded contexts. The triggering context (Order) publishes a domain event to the
-message bus and returns. Consuming contexts (Loyalty, Kitchen Display, Analytics)
-subscribe and process at their own pace.
+State-change flows must not make synchronous HTTP calls into consuming bounded contexts.
+The triggering context publishes a domain event to the message bus and returns. Consuming
+contexts subscribe and process at their own pace.
 
 Specifically:
 - Classes in `*.application.*` packages must not hold a direct reference to an HTTP
   client targeting another bounded context's service.
-- Cross-context HTTP clients (classes with suffix `Client` referencing another context
-  by name) must not appear in application-layer classes.
-- Post-order operations must be triggered by domain events consumed from the message bus.
+- Cross-context HTTP clients (classes with suffix `Client` referencing another context)
+  must not appear in application-layer classes.
+- State-change notifications must be triggered by domain events consumed from the message bus.
 
 ## Naming Conventions
 
@@ -52,12 +48,12 @@ Specifically:
 
 ## Consequences
 
-**Positive:** Each context's SLO is independent. Loyalty degradation does not affect
-order confirmation latency. Events are durable — if Loyalty is down, points are
-awarded when it recovers.
+**Positive:** Each context's SLO is independent. A downstream service degrading does
+not affect the upstream service's response latency. Events are durable — if a downstream
+service is unavailable, it catches up when it recovers.
 
-**Negative:** Eventual consistency. Loyalty points are not awarded in the same
-transaction as the order. This is an accepted trade-off documented to Product.
+**Negative:** Eventual consistency. Downstream state is not updated in the same
+transaction as the triggering event. This is an accepted trade-off documented to Product.
 
 ## Enforcement
 
