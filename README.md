@@ -212,10 +212,8 @@ Each section shows ✓ passing and ✗ failing rules. Failing rules expand to sh
 
 ## Why This Matters at Enterprise Scale
 
-A large Quick Service Restaurant enterprise operates dozens of bounded domains — order
-management, kitchen display, loyalty, POS integrations, inventory, delivery orchestration.
-Each domain has multiple teams, and each team has engineers who may never have read the
-architecture wiki.
+A large enterprise operates dozens of bounded domains — each with its own teams,
+and each team with engineers who may never have read the architecture wiki.
 
 Traditional governance relies on Architecture Review Boards (slow), wiki pages (stale), and
 code reviews (partial coverage under release pressure). The result: architectural drift is
