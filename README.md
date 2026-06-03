@@ -33,21 +33,27 @@ have already made into code that machines can check.
 ### Structural Fitness Agent
 
 Reads your Java codebase and your enterprise architecture docs (ADRs, standards) and
-generates **ArchUnit fitness functions** — Java tests that enforce structural rules like
-layering, bounded-context boundaries, banned libraries, and async communication patterns.
+runs a complete structural governance check in four phases:
 
-The tests are regenerated only when governance documents change. They compile-verify
-before being committed.
+1. **Scan** — reads all Java source files and produces an architecture report
+2. **Generate** — produces an ArchUnit test class from the scan and governance docs
+3. **Compile-verify** — confirms the generated Java compiles cleanly before committing
+4. **Run** — executes the fitness functions and reports pass/fail results
+
+Tests are regenerated only when governance documents change.
 
 ### API & Integration Fitness Agent
 
-Reads your service source code and your API style guide and produces two artefacts:
+Reads your service source code and your API style guide and runs a complete API
+governance check in four phases:
 
-- **OpenAPI spec** — generated from what the code actually exposes, not what was intended
-- **Spectral ruleset** — Spectral rules derived from the style guide
+1. **Scan** — reads the service source to discover all REST endpoints
+2. **Generate spec** — produces an OpenAPI 3.1 spec from what the code actually exposes
+3. **Generate ruleset** — translates the API style guide into a Spectral ruleset
+4. **Lint** — checks the spec against the ruleset and captures all violations as a JUnit report
 
-It then lints the spec against the ruleset, capturing all violations as a JUnit report.
 The ruleset is verified to be executable (via a probe spec) before being committed.
+The ruleset is only regenerated when the style guide changes.
 
 ---
 
@@ -105,6 +111,7 @@ Running the agents produces all the rest.
 | Generated artefact | Agent | Where |
 |--------------------|-------|-------|
 | `generated-tests/…GeneratedFitnessFunctionsTest.java` | Structural | `projects/order-service/` |
+| `target/surefire-reports/TEST-*.xml` | Structural | `projects/order-service/` |
 | `generated-specs/openapi.yaml` | API | `projects/order-service/` |
 | `generated-specs/spectral-junit.xml` | API | `projects/order-service/` |
 | `architecture/spectral-ruleset.yaml` | API | `example-company/` |
@@ -132,11 +139,11 @@ cp .env.example .env
 python3 scripts/run_tests.py
 ```
 
-Or run each agent individually:
+Or run each agent individually — each one is a complete governance check for its domain:
 
 ```bash
-python3 agents/structural_fitness_agent.py   # generates ArchUnit tests, compile-verifies
-python3 agents/api_fitness_agent.py          # generates OpenAPI spec + Spectral ruleset
+python3 agents/structural_fitness_agent.py   # scan → generate → compile-verify → run tests
+python3 agents/api_fitness_agent.py          # scan → generate spec → generate ruleset → lint
 ```
 
 **Reset to a clean state before a demo:**
