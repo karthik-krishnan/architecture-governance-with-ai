@@ -207,6 +207,55 @@ def compile_check(java_code: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Phase 4 — Run fitness functions and print results
+# ---------------------------------------------------------------------------
+
+def run_fitness_tests() -> None:
+    """Run `mvn test` and print a pass/fail summary, mirroring what the API
+    agent does with `spectral lint`.  Violations are expected for a governance
+    demo — the agent reports them but does not exit with an error code."""
+
+    print(f"\n{'─' * 70}")
+    print(f"  PHASE 4 — Run Fitness Functions")
+    print(f"{'─' * 70}")
+
+    result = subprocess.run(
+        ["mvn", "test", "-Dmaven.test.failure.ignore=true", "--batch-mode", "-q"],
+        cwd=MAVEN_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+    if result.returncode not in (0, 1):
+        print(f"  ✗  mvn exited with code {result.returncode}")
+        output = (result.stdout + result.stderr).strip()
+        for line in output.splitlines()[:20]:
+            print(f"     {line}")
+        return
+
+    # Parse the surefire summary line from Maven's batch output
+    # e.g. "Tests run: 12, Failures: 3, Errors: 0, Skipped: 0"
+    combined = result.stdout + result.stderr
+    summary_lines = [l for l in combined.splitlines() if "Tests run:" in l]
+
+    passed = failed = 0
+    for line in summary_lines:
+        import re
+        m = re.search(r"Tests run:\s*(\d+).*?Failures:\s*(\d+).*?Errors:\s*(\d+)", line)
+        if m:
+            run, failures, errors = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            passed += run - failures - errors
+            failed += failures + errors
+
+    if failed:
+        print(f"  ✓  Tests ran — {failed} violation(s) found, {passed} rule(s) passed"
+              f"  (governance report ready)\n")
+    else:
+        print(f"  ✓  All {passed} fitness function(s) passed — no violations\n")
+
+
+# ---------------------------------------------------------------------------
 # Phase 1 — Codebase Scanner (single-turn streaming)
 # ---------------------------------------------------------------------------
 
@@ -450,11 +499,12 @@ def main() -> None:
     (out_dir / DEPLOY_CLASS).write_text(java_code, encoding="utf-8")
     print(f"  Tests saved: {out_dir.name}/{DEPLOY_CLASS}")
 
+    # ── Phase 4: Run the fitness functions and report results
+    run_fitness_tests()
+
     print(f"\n{'=' * 70}")
     print(f"  Agent complete.")
-    print(f"{'=' * 70}")
-    print(f"\n  Run the fitness functions:")
-    print(f"    python3 run_tests.py\n")
+    print(f"{'=' * 70}\n")
 
 
 if __name__ == "__main__":

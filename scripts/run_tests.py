@@ -2,7 +2,13 @@
 """
 Architecture Governance — Unified Dashboard
 =============================================
-Orchestrates fitness function agents and renders a combined HTML report.
+Runs both governance agents and renders a combined HTML report.
+
+Each agent is a complete governance check for its domain:
+  structural_fitness_agent  — generates ArchUnit tests, compile-verifies, then runs them
+  api_fitness_agent         — generates OpenAPI spec + Spectral ruleset, then lints
+
+This script orchestrates both and produces a single HTML report.
 
 Usage:
     python3 run_tests.py                # run both agents, open unified report
@@ -76,17 +82,6 @@ def run_api(governance_dir: pathlib.Path, project_dir: pathlib.Path) -> None:
     )
 
 
-def run_mvn_tests(project_dir: pathlib.Path) -> None:
-    print("Running ArchUnit tests...", end="", flush=True)
-    result = subprocess.run(
-        ["mvn", "test", "-Dmaven.test.failure.ignore=true", "--batch-mode", "-q"],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    if result.returncode not in (0, 1):
-        print(" failed.")
-        sys.exit(result.stderr.decode(errors="replace") or f"mvn exited with code {result.returncode}")
-    print(" done.")
 
 
 # ---------------------------------------------------------------------------
@@ -641,7 +636,6 @@ def main() -> None:
         run_both = not args.structural and not args.api
         if run_both or args.structural:
             run_structural(governance_dir, project_dir)
-            run_mvn_tests(project_dir)
         if run_both or args.api:
             run_api(governance_dir, project_dir)
 
