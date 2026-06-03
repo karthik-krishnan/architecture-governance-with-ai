@@ -1,10 +1,14 @@
-# Restaurant Order Service — Architecture Governance Demo
+# Restaurant Order Service — Architecture Governance with AI
 
-This project demonstrates how **architecture fitness functions** can be codified as automated
-tests in a CI/CD pipeline using [ArchUnit](https://archunit.org).
+This project demonstrates how architecture governance can be **automated and AI-assisted**
+at enterprise scale using two complementary approaches:
 
-The production code intentionally violates layered-architecture rules.  
-The ArchUnit tests **fail by design** — that is the point.
+1. **Hand-authored fitness functions** — ArchUnit rules written by a tech lead, enforced in CI
+2. **AI-generated fitness functions** — two AI agents that scan the codebase and codify
+   governance rules from architecture decisions and standards
+
+The production code intentionally violates both structural and API rules.  
+The fitness functions **fail by design** — that is the point.
 
 ---
 
@@ -12,288 +16,252 @@ The ArchUnit tests **fail by design** — that is the point.
 
 > "If you can't enforce it, it isn't an architecture rule — it's a suggestion."
 
-Architecture diagrams and wiki pages drift away from the code the moment they're written.
-ArchUnit lets you express architecture intent as **executable JUnit 5 tests** that run in CI
-and break the build the moment a violation is introduced.
-
----
-
-## Prerequisites
-
-- Java 17+
-- Maven 3.8+
-
-```bash
-java -version   # should be 17+
-mvn -version    # should be 3.8+
-```
+Architecture diagrams and wiki pages drift away from the code the moment they are written.
+Fitness functions express architecture intent as **executable tests** that run in CI and
+break the build the moment a violation is introduced — whether that violation is a layering
+breach, a cross-context import, or a missing API version prefix.
 
 ---
 
 ## Project Structure
 
 ```
-src/main/java/com/example/restaurant/order/
-├── controller/     OrderController       ← HTTP entry point
-├── application/    OrderService          ← Business logic / use cases
-├── domain/         Order                 ← Core domain entity
-├── infrastructure/ PaymentGatewayClient  ← External system adapter
-└── repository/     OrderRepository       ← In-memory data store
-```
-
-**Intended dependency direction (Clean Architecture):**
-
-```
-controller  →  application  →  domain
-                    ↑
-             infrastructure      (implements interfaces defined in application)
-             repository          (depends only on domain)
+├── src/                              Java source with intentional violations
+│   └── main/java/com/example/
+│       ├── restaurant/order/
+│       │   ├── controller/           OrderController  (API + structural violations)
+│       │   ├── application/          OrderService     (cross-context violation)
+│       │   ├── domain/               Order
+│       │   ├── infrastructure/       PaymentGatewayClient
+│       │   └── repository/           OrderRepository
+│       └── loyalty/                  Separate bounded context
+│           └── repository/           LoyaltyRepository
+│
+├── src/test/java/…/                  Hand-authored ArchUnit fitness functions
+│
+└── architecture-skill-demo/          AI governance agents
+    ├── structural_fitness_agent.py   Generates ArchUnit tests from ADRs + specs
+    ├── api_fitness_agent.py          Scans code → OpenAPI spec → Spectral lint
+    ├── run_tests.py                  Unified orchestrator + HTML dashboard
+    ├── inputs/
+    │   ├── adrs/                     Architecture Decision Records
+    │   ├── specs/                    Architecture standards, API style guide
+    │   └── spectral-ruleset.yaml     Generated Spectral ruleset (committed)
+    └── skills/                       AI skill definitions (prompting documents)
 ```
 
 ---
 
 ## Violations Baked Into This Code
 
-| # | Where | What | Rule Broken |
+### Structural violations (ArchUnit catches these)
+
+| # | Where | What | Rule broken |
 |---|-------|------|-------------|
 | 1 | `OrderController` | Injects and calls `OrderRepository` directly | Controller must not access repository |
-| 2 | `Order` (domain) | Imports `PaymentGatewayClient` (infrastructure) | Domain must not depend on infrastructure |
-| 3 | `Order` (domain) | Imports `OrderService` (application) | Creates domain ↔ application cycle |
-| 4 | `OrderService` | Depends on concrete `PaymentGatewayClient` | Application must use abstractions, not concrete infra |
+| 2 | `OrderService` | Imports concrete `PaymentGatewayClient` | Application must use abstractions |
+| 3 | `OrderService` | Imports `LoyaltyRepository` from another context | Bounded contexts must not share repositories |
+
+### API violations (Spectral catches these)
+
+| # | Where | What | Style guide rule |
+|---|-------|------|-----------------|
+| 4 | `@RequestMapping("/orders")` | No version prefix | §1: paths must start with `/v{n}/` |
+| 5 | `@PostMapping` | No `@ResponseStatus(CREATED)` | §4: POST must return 201 |
+| 6 | Returns `Order` domain object | No response DTO | §6: internal types must not leak into contracts |
+| 7 | `getOrder()` | No error response schema | §5: 4xx responses need `{code, message, correlationId}` |
+
+---
+
+## Prerequisites
+
+**For the hand-authored ArchUnit tests:**
+```bash
+java -version    # 17+
+mvn -version     # 3.8+
+```
+
+**For the AI agents (architecture-skill-demo/):**
+```bash
+python3 --version    # 3.11+
+node --version       # 18+ (for spectral)
+npm install -g @stoplight/spectral-cli
+pip3 install anthropic python-dotenv openapi-spec-validator pyyaml
+```
+
+**Azure AI Foundry access** — copy `architecture-skill-demo/.env.example` to
+`architecture-skill-demo/.env` and fill in your endpoint and API key.
 
 ---
 
 ## Demo Flow
 
-### Step 1 — Run the fitness functions and watch them fail
+### Hand-authored tests only
 
 ```bash
 mvn test
 ```
 
-Expected: `BUILD FAILURE` — 5 violations reported, 0 passing.
+Expected: `BUILD FAILURE` — the intentional violations are caught immediately.
 
-### Step 2 — Read the violation output
+### Full AI governance demo
 
-Each failure tells you exactly what is wrong and why it matters:
-
-```
-Architecture Violation — Rule 'no classes that reside in a package '..controller..'
-should access classes that reside in a package '..repository..',
-because Controllers must go through the application layer — direct repository access
-bypasses business-logic enforcement and makes the boundary unenforceable'
-was violated (1 times):
-
-  Method <OrderController.getOrder(String)> calls method
-  <OrderRepository.findById(String)> in (OrderController.java:25)
-```
-
-### Step 3 — Walk through each fitness function
-
-Open [`src/test/java/com/example/restaurant/order/ArchitectureFitnessFunctionsTest.java`](src/test/java/com/example/restaurant/order/ArchitectureFitnessFunctionsTest.java)
-
-Each `@ArchTest` is one codified rule:
-
-| Test Method | Governance Rule |
-|-------------|----------------|
-| `controllers_should_not_directly_access_repositories` | Controllers must go through the service layer |
-| `domain_should_not_depend_on_infrastructure` | Domain stays pure — no infrastructure imports |
-| `application_should_not_directly_use_infrastructure_clients` | Services depend on interfaces, not concrete clients |
-| `no_cyclic_dependencies_between_layers` | No layer A→B→A cycles |
-| `repositories_only_accessible_from_application_or_infrastructure` | Repository access is always controlled |
-
-### Step 4 — Review the fix plan
-
-See [`REFACTOR_PLAN.md`](REFACTOR_PLAN.md) for the step-by-step fix for each violation.
-
-### Step 5 — (Optional) Apply the fixes and re-run
-
-After applying the fixes in `REFACTOR_PLAN.md`:
+**Step 1 — Pre-run (do this before the demo, takes a few minutes):**
 
 ```bash
-mvn test
+cd architecture-skill-demo
+python3 run_tests.py
 ```
 
-Expected: `BUILD SUCCESS` — all 5 fitness functions pass.
+This runs both AI agents and opens the unified HTML report.
+
+**Step 2 — Subsequent runs are instant (cache hits):**
+
+```bash
+python3 run_tests.py
+```
+
+- Structural tests: skip AI generation (governance docs unchanged) → run `mvn test` → fresh results
+- API agent: re-scans code, re-generates OpenAPI spec, lints against cached ruleset
+
+**Caching model:**
+
+| Artifact | Regenerated when |
+|----------|-----------------|
+| `generated-tests/…Test.java` | ADRs or architecture specs change |
+| `inputs/spectral-ruleset.yaml` | API style guide changes |
+| `generated-specs/openapi.yaml` | Always (reflects current code) |
+
+To force regeneration: `--refresh-tests` or `--refresh-ruleset` flags on the individual agents.
+
+### Run a single agent
+
+```bash
+python3 run_tests.py --structural   # structural agent + mvn test
+python3 run_tests.py --api          # API agent only
+python3 run_tests.py --no-run       # regenerate report from existing artifacts
+```
+
+---
+
+## The Two AI Agents
+
+### Structural Fitness Agent
+
+Generates ArchUnit tests from governance documents — not from the code.
+
+```
+ADRs + Architecture Specs
+         │
+         ▼ (only when governance docs change)
+  Phase 2: archunit-generator skill → GeneratedFitnessFunctionsTest.java
+         │
+         ▼ (always)
+  Phase 3: mvn test → results → HTML report
+```
+
+Phase 1 (codebase scan) still runs each time and is saved to `outputs/` for
+human review, but it does **not** feed the test generator. Rules come from ADRs.
+A rule is correct because an architect decided it, not because the scanner found a violation.
+
+### API & Integration Fitness Agent
+
+Scans the actual codebase and validates it against the platform API style guide.
+
+```
+Source code
+    │
+    ▼ Phase 1: api-scanner skill → endpoint inventory
+    ▼ Phase 2: openapi-generator skill → openapi.yaml (with x-governance-gap annotations)
+    ▼ Phase 3: spectral-ruleset-generator (skipped if style guide unchanged)
+    ▼ Phase 4: spectral lint → spectral-junit.xml → HTML report
+```
+
+---
+
+## The Unified HTML Dashboard
+
+`run_tests.py` produces a single governance report with three sections:
+
+| Section | Icon | Source |
+|---------|------|--------|
+| Hand-authored Fitness Functions | ✍ | Surefire XML (ArchitectureFitnessFunctionsTest) |
+| AI-generated Fitness Functions | ✦ | Surefire XML (GeneratedFitnessFunctionsTest) |
+| AI-generated API Fitness Functions | ⬡ | Spectral JUnit XML |
+
+Each section shows ✓ passing and ✗ failing rules. Failing rules expand to show violation details.
 
 ---
 
 ## Why This Matters at Enterprise Scale
 
-At a large QSR enterprise with many engineers, violations accumulate silently:
+A large Quick Service Restaurant enterprise operates dozens of bounded domains — order
+management, kitchen display, loyalty, POS integrations, inventory, delivery orchestration.
+Each domain has multiple teams, and each team has engineers who may never have read the
+architecture wiki.
 
-- New engineers follow the nearest example in the codebase, not the architecture diagram
-- Code reviews catch some violations but miss others under time pressure
-- Once one violation slips through, it becomes the new "pattern" others copy
+Traditional governance relies on Architecture Review Boards (slow), wiki pages (stale), and
+code reviews (partial coverage under release pressure). The result: architectural drift is
+invisible until it causes an outage, a failed audit, or a replatforming project that takes
+three times longer than planned.
 
-ArchUnit makes the rules **executable** — violations break the build on day one, before they
-can spread, before they can be copied, and before they can become permanent.
+### The EA Altitude
 
----
-
-## A Note on Scope: Two Levels of Architecture Governance
-
-The fitness functions in this demo (controller → repository, domain → infrastructure) are
-**code design rules** — the kind a tech lead or development lead codifies to keep a single
-service internally consistent. They are useful for demonstrating *how* ArchUnit works as a
-mechanism, but they are **not what Enterprise Architecture teams primarily govern**.
-
-EA operates at a different altitude:
+The fitness functions in this demo operate at two levels:
 
 | Level | Governed by | Concerns |
 |-------|-------------|---------|
-| **Code design** | Tech lead, development lead | Class layering, dependency inversion, package structure within a service |
-| **Service design** | Senior engineer, architect | Domain model integrity, internal modularity, test coverage |
-| **Enterprise Architecture** | EA team, Architecture Council | Bounded context boundaries, cross-domain coupling, event-driven compliance, API contract standards, platform-wide technology standards, security posture, observability baseline |
+| **Code design** | Tech lead | Class layering, dependency inversion, package structure within a service |
+| **Enterprise Architecture** | EA team | Bounded context boundaries, cross-domain coupling, API contract standards, platform-wide technology standards |
 
 The EA question is not "does this controller call a repository?" — it is:
 
-> "Does the Loyalty domain import classes from the Order domain? Is the Analytics service
-> reading directly from the Order database? Are delivery partner SDKs leaking into domain
-> logic? Is the post-order flow synchronously coupled to three consuming services in a way
-> that turns one team's outage into every team's outage?"
+> "Does the Loyalty domain import classes from the Order domain? Is the Order service calling
+> the Loyalty service synchronously in the checkout path, creating a cascading failure risk?
+> Are delivery partner SDKs leaking into domain logic? Does every service follow the API
+> versioning standard so consumer contracts are stable?"
 
-Those are bounded context, platform, and resilience concerns — and they have real
-production consequences. The Q3 2025 loyalty points incident in the
-[architecture-skill-demo](architecture-skill-demo/) example was caused by exactly the kind
-of cross-domain synchronous coupling that an EA-level fitness function would have blocked.
+Those are the questions the AI agents are designed to surface automatically across every
+service on the platform — without an architect reading every file.
 
-**See [`architecture-skill-demo/`](architecture-skill-demo/) for the EA-level governance story.**
+### From Governance Decision to Running Test
+
+```
+Architect writes ADR
+        │
+        ▼
+AI agent reads ADR → generates ArchUnit rule
+        │
+        ▼
+Rule committed to repo, runs in CI on every PR
+        │
+        ▼
+Violation breaks the build before it merges, before it spreads
+        │
+        ▼
+ADR updated → agent re-generates → new rule replaces old one
+```
+
+The tests regenerate when the governance decisions change — not when the code changes.
+Code changes run against the existing tests. This is the correct relationship between
+governance and implementation.
 
 ---
 
-## Architecture Governance at Enterprise Scale: A QSR Pattern
-
-### The Problem With Documented Standards
-
-A large Quick Service Restaurant enterprise operates dozens of bounded domains — order
-management, kitchen display systems, loyalty, POS integrations, inventory, delivery
-orchestration. Each domain has multiple teams, and each team has engineers of varying
-tenure who may never have read the architecture wiki.
-
-Traditional governance relies on:
-
-- **Architecture Review Boards** — slow, bottlenecked, not present in every sprint
-- **Wiki pages and ADRs** — accurate when written, stale within weeks
-- **Code review** — catches some violations, misses others, scales poorly under release pressure
-- **Convention by example** — the nearest code becomes the template, good or bad
-
-The result: architectural drift is invisible until it causes an outage, a failed audit,
-or a replatforming project that takes three times longer than planned because the layering
-assumptions no longer hold.
-
-### From Architecture Decision to Automated Fitness Function
-
-The pattern demonstrated in this project closes that gap:
-
-```
-Architecture Decision (ADR / Whiteboard Session)
-        │
-        ▼
-Codified as an ArchUnit Rule (one @ArchTest per principle)
-        │
-        ▼
-Committed to the Repository (lives with the code it governs)
-        │
-        ▼
-Executed in CI/CD on Every Pull Request
-        │
-        ▼
-Build Fails on Violation — Before Merge, Before Spread
-```
-
-Each fitness function is a first-class citizen of the codebase. It has a name, a reason,
-and a failure message a developer can act on without consulting an architect. The governance
-is always running, never fatigued, never on holiday, and scales linearly with the number of
-engineers on the platform.
-
-### CI/CD Integration
-
-Add this to your pipeline and every PR is checked automatically:
+## CI/CD Integration
 
 ```yaml
-# GitHub Actions example
+# GitHub Actions — hand-authored tests
 - name: Architecture fitness functions
   run: mvn test -Dtest=ArchitectureFitnessFunctionsTest
 
-# Jenkins / standard Maven pipeline
-mvn verify -Dtest=ArchitectureFitnessFunctionsTest
+# GitHub Actions — full governance suite (AI artifacts pre-generated)
+- name: Full governance suite
+  run: cd architecture-skill-demo && python3 run_tests.py --no-run
+  # Note: run_tests.py --no-run reads existing artifacts; agents run separately
+  # on ADR/spec changes via a dedicated workflow trigger
 ```
 
 Because ArchUnit runs against compiled bytecode — not source text — it catches violations
 regardless of how the dependency was introduced: direct import, reflection, framework
 injection, or indirect transitive coupling.
-
-### Where AI Fits: Identifying Gaps and Generating Candidate Rules
-
-Writing the first set of fitness functions is straightforward. The harder problem at
-enterprise scale is knowing *which rules you're missing*. AI-assisted governance addresses
-this in three ways:
-
-**1. Gap analysis across the existing codebase**
-
-An AI agent can scan a large codebase and surface dependency patterns that violate stated
-architecture intent but have not yet been codified as tests. Rather than a human architect
-reading thousands of files, the agent produces a prioritized list:
-
-> "Classes in `com.example.loyalty.domain` are imported in 14 places outside the loyalty
-> bounded context. No fitness function currently enforces the context boundary."
-
-**2. Candidate rule generation from ADRs and design documents**
-
-Given an Architecture Decision Record or a team's documented standards, an AI agent can
-draft the corresponding ArchUnit rules as a starting point for engineer review:
-
-> *ADR-042: The ordering domain must not directly depend on the loyalty domain. Use events.*
-
-```java
-// AI-generated candidate — engineer reviews and commits if correct
-@ArchTest
-static final ArchRule ordering_should_not_depend_on_loyalty =
-    noClasses()
-        .that().resideInAPackage("com.example.ordering..")
-        .should().dependOnClassesThat().resideInAPackage("com.example.loyalty..")
-        .because("ADR-042: cross-domain dependencies must use events, not direct calls");
-```
-
-**3. Continuous monitoring for rules that have become stale**
-
-As the codebase evolves, some fitness functions become obsolete or start producing false
-positives because the architecture itself changed intentionally. AI can flag these for
-review — keeping the governance layer honest rather than letting it accumulate noise that
-engineers learn to ignore.
-
-### The Governance Loop
-
-```
-Architect defines intent
-        │
-        ▼
-AI identifies gaps + drafts candidate rules
-        │
-        ▼
-Engineer reviews, refines, and commits rules
-        │
-        ▼
-CI enforces rules on every merge
-        │
-        ▼
-Violations surface early — teams fix before drift compounds
-        │
-        ▼
-Architecture evolves → AI detects stale rules → loop repeats
-```
-
-This is not about replacing architects or removing human judgment. It is about making
-architectural decisions durable — encoding them in a form that survives team turnover,
-release pressure, and the passage of time. In a QSR enterprise where the cost of a layering
-violation might be invisible today and catastrophic during the next peak trading window,
-that durability is the point.
-
----
-
-## Running Only the Architecture Tests
-
-```bash
-mvn test -Dtest=ArchitectureFitnessFunctionsTest
-```
