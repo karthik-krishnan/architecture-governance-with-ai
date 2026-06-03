@@ -67,6 +67,46 @@ SHA_PREFIX       = "# style-guide-sha256: "
 
 MAX_LINT_ITERATIONS = 3
 
+# Minimal valid OpenAPI 3.1 spec used as a probe when verifying a newly-generated
+# Spectral ruleset.  It intentionally violates several style-guide rules so
+# Spectral will return exit code 1 (violations found) rather than 0 — both codes
+# mean the ruleset loaded and executed successfully.  Exit code ≥ 2 means the
+# ruleset YAML is invalid (unknown function, bad JSONPath, syntax error) and needs
+# to be corrected before it can be committed.
+_RULESET_VALIDATION_PROBE = """\
+openapi: "3.1.0"
+info:
+  title: "Ruleset validation probe"
+  version: "1.0.0"
+  description: "Minimal spec used only to check that the Spectral ruleset is executable."
+paths:
+  /v1/probe:
+    get:
+      operationId: getProbe
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+    post:
+      operationId: createProbe
+      responses:
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+"""
+
 
 # ---------------------------------------------------------------------------
 # Prerequisites check
@@ -327,9 +367,20 @@ def run_spec_generator(client: AnthropicFoundry, scan_output: str, model: str) -
 # ---------------------------------------------------------------------------
 
 def run_ruleset_generator(client: AnthropicFoundry, model: str) -> str:
+    """Generate a Spectral ruleset from the API style guide.
 
+    Mirrors the structural agent's compile-check loop: after each generation
+    attempt, run `spectral lint <probe-spec> --ruleset <candidate>`.
+      - exit 0 or 1  → ruleset loaded and executed (0 = no hits, 1 = violations)
+      - exit ≥ 2     → Spectral runtime error (bad function name, invalid JSONPath,
+                        YAML syntax error) → send errors back, retry
+
+    Returns the YAML string with the style-guide SHA embedded as the first line.
+    The caller is responsible for writing this to RULESET_FILE.
+    """
     generator_skill = read_file(SKILLS_DIR / "spectral-ruleset-generator.md")
     api_style_guide = read_file(STYLE_GUIDE_PATH)
+    sha             = compute_sha256(STYLE_GUIDE_PATH)
 
     system = (
         "You are a senior platform architect operating the Spectral Ruleset Generator skill. "
@@ -337,27 +388,76 @@ def run_ruleset_generator(client: AnthropicFoundry, model: str) -> str:
         "Return only the Spectral YAML ruleset — no explanation, no markdown fences.\n\n"
         f"SKILL DEFINITION:\n{generator_skill}"
     )
-    user = (
+    initial_user = (
         "Generate the Spectral ruleset from the API style guide below.\n\n"
         f"API STYLE GUIDE:\n{api_style_guide}\n"
     )
 
-    print(f"\n{'─' * 70}")
-    print(f"  PHASE 3 — Generate Spectral Ruleset")
-    print(f"{'─' * 70}\n")
+    messages: list[dict] = [{"role": "user", "content": initial_user}]
+    ruleset_yaml = ""
 
-    collected: list[str] = []
-    with client.messages.stream(
-        model=model, max_tokens=8000, system=system,
-        messages=[{"role": "user", "content": user}],
-    ) as stream:
-        for text in stream.text_stream:
-            print(text, end="", flush=True)
-            collected.append(text)
-    print()
+    # Temp files used only during the verification loop — never committed paths
+    GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+    probe_path     = GENERATED_DIR / "_probe.yaml"
+    candidate_path = GENERATED_DIR / "_ruleset-candidate.yaml"
 
-    ruleset_yaml = strip_yaml_fences("".join(collected))
-    sha = compute_sha256(STYLE_GUIDE_PATH)
+    for attempt in range(1, MAX_LINT_ITERATIONS + 1):
+
+        print(f"\n{'─' * 70}")
+        print(f"  Ruleset Generation  (attempt {attempt}/{MAX_LINT_ITERATIONS})")
+        print(f"{'─' * 70}\n")
+
+        collected: list[str] = []
+        with client.messages.stream(
+            model=model, max_tokens=8000, system=system,
+            messages=messages,
+        ) as stream:
+            for text in stream.text_stream:
+                print(text, end="", flush=True)
+                collected.append(text)
+        print()
+
+        raw          = "".join(collected)
+        ruleset_yaml = strip_yaml_fences(raw)
+
+        # ── Verify: can Spectral actually execute this ruleset? ────────────
+        print("  Verifying ruleset is executable by Spectral...", end="", flush=True)
+        probe_path.write_text(_RULESET_VALIDATION_PROBE, encoding="utf-8")
+        candidate_path.write_text(ruleset_yaml, encoding="utf-8")
+
+        rc, spectral_error, _ = spectral_lint(probe_path, candidate_path)
+
+        probe_path.unlink(missing_ok=True)
+        candidate_path.unlink(missing_ok=True)
+
+        if rc in (0, 1):
+            # Spectral loaded and ran the ruleset — valid regardless of violations
+            print("  ✓\n")
+            return ensure_sha_comment(ruleset_yaml, sha)
+
+        # rc ≥ 2: Spectral itself failed — invalid function, bad JSONPath, etc.
+        print("  ✗\n")
+        for line in spectral_error.splitlines()[:15]:
+            print(f"     {line}")
+        print()
+
+        if attempt < MAX_LINT_ITERATIONS:
+            print("  →  Sending errors back to agent for correction...\n")
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({
+                "role": "user",
+                "content": (
+                    "The generated Spectral ruleset has a syntax or configuration error "
+                    "that prevents Spectral from loading it.  Fix only the YAML — invalid "
+                    "function names, bad JSONPath expressions, or structural errors.\n\n"
+                    "Do NOT weaken any governance rules.  Return only the corrected YAML, "
+                    "no explanation, no markdown fences.\n\n"
+                    f"SPECTRAL ERROR:\n{spectral_error}"
+                ),
+            })
+
+    print(f"  ⚠  Could not produce a valid ruleset after {MAX_LINT_ITERATIONS} attempts.")
+    print("  Last version will be committed — check errors above.\n")
     return ensure_sha_comment(ruleset_yaml, sha)
 
 
@@ -481,15 +581,17 @@ def main() -> None:
     # Phase 2: Generate spec
     spec_yaml = run_spec_generator(client, scan_output, model)
 
-    # Phase 3: Generate ruleset (skipped when style guide is unchanged)
+    # Ruleset generation: only when the style guide has changed
     if stale:
+        print(f"\n{'─' * 70}")
+        print(f"  Ruleset Generation  (style guide changed — regenerating)")
+        print(f"{'─' * 70}")
         ruleset_yaml = run_ruleset_generator(client, model)
         RULESET_FILE.write_text(ruleset_yaml, encoding="utf-8")
         print(f"  Ruleset saved : {RULESET_FILE.relative_to(SKILL_DIR)}")
-
     else:
         print(f"\n{'─' * 70}")
-        print(f"  PHASE 3 — Spectral Ruleset  (skipped — style guide unchanged)")
+        print(f"  Ruleset Generation  (skipped — style guide unchanged)")
         print(f"{'─' * 70}")
 
     # Phase 4: Spectral lint — read-only against the committed ruleset
