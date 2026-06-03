@@ -32,7 +32,7 @@ rules:
         match: "^(/v[0-9]+)?(/[a-z0-9-]+(/\\{[a-zA-Z][a-zA-Z0-9]*\\})?)*(/[a-z0-9-]+)?$"
 
   qsr-no-post-for-reads:
-    message: "§3: POST operations must not be used for reads — summary/description suggests a read operation."
+    message: "§3: POST operations must not be used for reads — summary/description suggests a read operation. Found operationId: {{value}}"
     description: "POST endpoints should not be named or described as fetches/reads."
     severity: warn
     given: "$.paths[*].post"
@@ -69,7 +69,7 @@ rules:
             - "204"
 
   qsr-error-response-schema:
-    message: "§5: Error responses must define a schema with code, message, and correlationId fields."
+    message: "§5: Error responses must define a schema with code, message, and correlationId fields. {{error}}"
     description: "Standard error envelope is required on 4xx/5xx JSON responses."
     severity: error
     given: "$.paths[*][*].responses[400,401,403,404,409,422,500,503].content['application/json'].schema"
@@ -91,7 +91,7 @@ rules:
               type: string
 
   qsr-error-code-format:
-    message: "§5: Error 'code' field must be uppercase snake-case string (e.g. ORDER_NOT_FOUND)."
+    message: "§5: Error 'code' field must be uppercase snake-case string (e.g. ORDER_NOT_FOUND). {{error}}"
     description: "The error code enum/pattern must enforce uppercase snake-case."
     severity: warn
     given: "$.paths[*][*].responses[400,401,403,404,409,422,500,503].content['application/json'].schema.properties.code"
@@ -106,7 +106,7 @@ rules:
                 - string
 
   qsr-response-content-type:
-    message: "§6: Response bodies must declare application/json as a content type."
+    message: "§6: Response bodies must declare application/json as a content type. Declared: {{value}}"
     description: "Every response with a body must include application/json."
     severity: warn
     given: "$.paths[*][*].responses[200,201,202].content"
@@ -148,7 +148,7 @@ rules:
       function: truthy
 
   qsr-openapi-version-3-1:
-    message: "§8: Services must use OpenAPI 3.1."
+    message: "§8: Services must use OpenAPI 3.1. Found: {{value}}"
     description: "The OpenAPI version must be 3.1.x."
     severity: error
     given: "$.openapi"
@@ -158,7 +158,7 @@ rules:
         match: "^3\\.1\\."
 
   qsr-info-required:
-    message: "§8: The info block must declare title, version, and description."
+    message: "§8: The info block must declare title, version, and description. {{error}}"
     description: "Basic service metadata is required for the API catalogue."
     severity: error
     given: "$.info"
