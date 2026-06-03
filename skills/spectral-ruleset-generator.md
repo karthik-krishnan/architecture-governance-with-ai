@@ -32,6 +32,11 @@ rules:
 
 ## Built-in Spectral Functions
 
+**IMPORTANT — JavaScript regex only.** Spectral runs in Node.js. Regex patterns must be
+valid JavaScript regular expressions. Do NOT use inline flags like `(?i)` or `(?s)` —
+these are PCRE/Java extensions and will throw a runtime error in Spectral. For
+case-insensitive matching, list both cases explicitly or use `[Aa-Zz]` character classes.
+
 | Function | Use case | Key options |
 |----------|----------|-------------|
 | `pattern` | Value matches a regex | `match: "^regex$"` or `notMatch: "regex"` |
@@ -170,7 +175,7 @@ qsr-no-pii-in-paths:
   then:
     function: pattern
     functionOptions:
-      notMatch: "(?i)(^email$|^phone$|^mobile$|^fullName$|^firstName$|^lastName$|^address$|^dob$|^ssn$|^password$|^secret$)"
+      notMatch: "^(email|phone|mobile|fullName|firstName|lastName|name|address|dob|ssn|password|secret)$"
 ```
 
 ---
