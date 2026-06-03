@@ -111,5 +111,4 @@ Produce this exact structure:
 | §7 Pagination | N | N |
 | §9 PII in paths | N | N |
 
-**OpenAPI spec present:** YES — {path} / NO — missing from src/main/resources/openapi.yaml
 ```
