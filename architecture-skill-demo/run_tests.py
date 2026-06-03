@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Architecture Governance Report
-================================
-Runs Maven fitness function tests and generates a self-contained HTML
-governance dashboard. Opens in the browser automatically.
+Architecture Governance — Unified Dashboard
+=============================================
+Orchestrates fitness function agents and renders a combined HTML report.
 
 Demo flow:
-    python3 run_tests.py --reset    # BEFORE: clears AI-generated tests, shows hand-authored only
-    python3 structural_fitness_agent.py   # runs the Structural Fitness Agent live
-    python3 run_tests.py            # AFTER: shows hand-authored + AI-generated side by side
+    python3 run_tests.py --reset        # BEFORE: clear all generated artifacts
+    python3 run_tests.py                # AFTER: run both agents, open unified report
 
-Other usage:
-    python3 run_tests.py --no-run   # regenerate report from last test run without re-running tests
+Other flags:
+    python3 run_tests.py --structural   # structural agent only
+    python3 run_tests.py --api          # API agent only
+    python3 run_tests.py --no-run       # regenerate report from last artifacts
 """
 
 import argparse
@@ -22,29 +22,71 @@ import sys
 import webbrowser
 import xml.etree.ElementTree as ET
 
-SCRIPT_DIR     = pathlib.Path(__file__).parent
-MAVEN_ROOT     = SCRIPT_DIR.parent
-REPORTS_DIR    = MAVEN_ROOT / "target" / "surefire-reports"
-OUTPUT_DIR     = SCRIPT_DIR / "outputs"
-OUTPUT_HTML    = OUTPUT_DIR / "governance-report.html"
+SCRIPT_DIR      = pathlib.Path(__file__).parent
+MAVEN_ROOT      = SCRIPT_DIR.parent
+REPORTS_DIR     = MAVEN_ROOT / "target" / "surefire-reports"
+GENERATED_SPECS = MAVEN_ROOT / "generated-specs"
+OUTPUT_DIR      = SCRIPT_DIR / "outputs"
+OUTPUT_HTML     = OUTPUT_DIR / "governance-report.html"
+
+# Structural reset targets
 GENERATED_FILE  = MAVEN_ROOT / "generated-tests" / "com" / "example" / "governance" / "GeneratedFitnessFunctionsTest.java"
 GENERATED_CLASS = MAVEN_ROOT / "target" / "test-classes" / "com" / "example" / "governance" / "GeneratedFitnessFunctionsTest.class"
-GENERATED_XML   = MAVEN_ROOT / "target" / "surefire-reports" / "TEST-com.example.governance.GeneratedFitnessFunctionsTest.xml"
+GENERATED_XML   = REPORTS_DIR / "TEST-com.example.governance.GeneratedFitnessFunctionsTest.xml"
+
+# API reset targets
+OPENAPI_FILE    = GENERATED_SPECS / "openapi.yaml"
+RULESET_FILE    = GENERATED_SPECS / "spectral-ruleset.yaml"
+JUNIT_FILE      = GENERATED_SPECS / "spectral-junit.xml"
 
 MAX_VIOLATIONS_SHOWN = 5
 
 CLASS_LABELS = {
-    "ArchitectureFitnessFunctionsTest": ("Hand-authored Fitness Functions", "✍"),
-    "GeneratedFitnessFunctionsTest":    ("AI-generated Fitness Functions", "✦"),
+    "ArchitectureFitnessFunctionsTest": ("Hand-authored Fitness Functions",    "✍"),
+    "GeneratedFitnessFunctionsTest":    ("AI-generated Fitness Functions",     "✦"),
+    "spectral":                         ("AI-generated API Fitness Functions", "⬡"),
 }
 
 
 # ---------------------------------------------------------------------------
-# Run tests
+# Reset
 # ---------------------------------------------------------------------------
 
-def run_tests() -> None:
-    print("Running fitness function tests...", end="", flush=True)
+def do_reset() -> None:
+    removed = []
+    for path in (GENERATED_FILE, GENERATED_CLASS, GENERATED_XML,
+                 OPENAPI_FILE, RULESET_FILE, JUNIT_FILE):
+        if path.exists():
+            path.unlink()
+            removed.append(path.name)
+    if removed:
+        print(f"Cleared generated artifacts ({', '.join(removed)}) — showing hand-authored only.")
+    else:
+        print("No generated artifacts found — already clean.")
+
+
+# ---------------------------------------------------------------------------
+# Run agents / tests
+# ---------------------------------------------------------------------------
+
+def run_structural() -> None:
+    print("\nRunning Structural Fitness Agent...")
+    subprocess.run(
+        [sys.executable, str(SCRIPT_DIR / "structural_fitness_agent.py")],
+        cwd=SCRIPT_DIR,
+    )
+
+
+def run_api() -> None:
+    print("\nRunning API & Integration Fitness Agent...")
+    subprocess.run(
+        [sys.executable, str(SCRIPT_DIR / "api_fitness_agent.py")],
+        cwd=SCRIPT_DIR,
+    )
+
+
+def run_mvn_tests() -> None:
+    print("Running ArchUnit tests...", end="", flush=True)
     result = subprocess.run(
         ["mvn", "test", "-Dmaven.test.failure.ignore=true", "--batch-mode", "-q"],
         cwd=MAVEN_ROOT,
@@ -57,7 +99,7 @@ def run_tests() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Parse surefire XML
+# Parse Surefire XML
 # ---------------------------------------------------------------------------
 
 def short_name(classname: str) -> str:
@@ -83,7 +125,7 @@ def parse_violations(cdata: str) -> list[str]:
     return violations
 
 
-def load_report(xml_path: pathlib.Path) -> dict:
+def load_surefire_report(xml_path: pathlib.Path) -> dict:
     root  = ET.parse(xml_path).getroot()
     suite = short_name(root.attrib.get("name", xml_path.stem))
     total = int(root.attrib.get("tests",    0))
@@ -100,6 +142,42 @@ def load_report(xml_path: pathlib.Path) -> dict:
 
     return {"suite": suite, "total": total, "passed": total - fails,
             "failed": fails, "rules": rules}
+
+
+# ---------------------------------------------------------------------------
+# Parse Spectral JUnit XML
+# ---------------------------------------------------------------------------
+
+def load_spectral_report(xml_path: pathlib.Path) -> dict:
+    """Parse spectral --format junit output.
+
+    Spectral emits one <testcase> per violation. We group by rule ID (testcase
+    name) so each rule appears once with all its violation locations.
+    """
+    root = ET.parse(xml_path).getroot()
+
+    suite_el = root if root.tag == "testsuite" else root.find("testsuite")
+    if suite_el is None:
+        return {"suite": "spectral", "total": 0, "passed": 0, "failed": 0, "rules": []}
+
+    rule_violations: dict[str, list[str]] = {}
+    for tc in suite_el.findall("testcase"):
+        rule_id  = tc.attrib.get("name", "unknown")
+        location = tc.attrib.get("classname", "")
+        f = tc.find("failure")
+        if f is not None:
+            msg    = f.attrib.get("message", "") or (f.text or "").strip().splitlines()[0]
+            detail = f"{location}: {msg}" if location else msg
+            rule_violations.setdefault(rule_id, []).append(detail)
+
+    rules = [
+        {"name": rule_id, "passed": False, "violations": viols}
+        for rule_id, viols in rule_violations.items()
+    ]
+    failed = len(rules)
+
+    return {"suite": "spectral", "total": failed, "passed": 0,
+            "failed": failed, "rules": rules}
 
 
 # ---------------------------------------------------------------------------
@@ -278,17 +356,25 @@ footer {
 
 
 def display_name(rule_name: str) -> str:
-    """Convert snake_case rule names to readable display text.
-    The first two parts are treated as the prefix (e.g. FF + 001, or FF + SEC)
-    and kept uppercase. The rest becomes sentence-cased.
-    """
-    parts = rule_name.split("_")
-    prefix = [p for p in parts[:2] if p.isdigit() or (p.isupper() and len(p) <= 4)]
-    desc_parts = parts[len(prefix):]
-    desc_text = " ".join(p.lower() for p in desc_parts)
-    if desc_text:
-        desc_text = desc_text[0].upper() + desc_text[1:]
-    return (" ".join(prefix) + " " + desc_text).strip()
+    """Convert snake_case or kebab-case rule names to readable display text."""
+    name  = rule_name.replace("-", "_")
+    parts = name.split("_")
+
+    # ArchUnit rules: FF_NNN_description
+    if parts and parts[0].upper() == "FF":
+        prefix = [p for p in parts[:2]
+                  if p.upper() == "FF" or p.isdigit() or (p.isupper() and len(p) <= 4)]
+        desc_parts = parts[len(prefix):]
+        desc_text  = " ".join(p.lower() for p in desc_parts)
+        if desc_text:
+            desc_text = desc_text[0].upper() + desc_text[1:]
+        return (" ".join(prefix) + " " + desc_text).strip()
+
+    # Spectral rules: qsr-some-rule-name → drop qsr prefix, title-case
+    if parts and parts[0].lower() == "qsr":
+        parts = parts[1:]
+    text = " ".join(p.lower() for p in parts)
+    return (text[0].upper() + text[1:]) if text else rule_name
 
 
 def esc(text: str) -> str:
@@ -297,8 +383,6 @@ def esc(text: str) -> str:
 
 
 def format_violation_item(line: str) -> str:
-    """Format a single violation line, splitting the location suffix."""
-    # Extract (File.java:N) suffix if present
     if " in (" in line and line.endswith(")"):
         body, loc = line.rsplit(" in (", 1)
         loc = loc.rstrip(")")
@@ -323,7 +407,7 @@ def render_rule(rule: dict) -> str:
             <span class="rule-name {name_cls}">{esc(display_name(name))}</span>
         </div>"""
 
-    # Separate summary line from detail lines
+    # ArchUnit: separate summary line from detail lines
     summary_lines = [l for l in viols if "was violated" in l or "Architecture Violation" in l]
     detail_lines  = [l for l in viols if l not in summary_lines]
 
@@ -331,7 +415,6 @@ def render_rule(rule: dict) -> str:
     if summary_lines:
         summary_html = f'<div class="violation-summary">{esc(summary_lines[0])}</div>'
 
-    # Categorise detail lines
     violation_items = [l for l in detail_lines
                        if l.startswith(("Method ", "Field ", "Constructor ", "Class "))]
     other_lines     = [l for l in detail_lines
@@ -347,15 +430,18 @@ def render_rule(rule: dict) -> str:
 
     remaining = len(violation_items) - shown
     if remaining > 0:
-        items_html += f'<div class="more-hint">… and {remaining} more violation{"s" if remaining != 1 else ""}</div>'
+        items_html += (f'<div class="more-hint">… and {remaining} more '
+                       f'violation{"s" if remaining != 1 else ""}</div>')
 
     dim_html = ""
     if other_lines and not violation_items:
-        # Cycle detection output — show first few dim lines
-        dim_text = "\n".join(other_lines[:MAX_VIOLATIONS_SHOWN])
-        if len(other_lines) > MAX_VIOLATIONS_SHOWN:
-            dim_text += f"\n… {len(other_lines) - MAX_VIOLATIONS_SHOWN} more lines"
-        dim_html = f'<div class="dim-block">{esc(dim_text)}</div>'
+        # Spectral violations or cycle detection output
+        shown_lines = other_lines[:MAX_VIOLATIONS_SHOWN]
+        for line in shown_lines:
+            items_html += format_violation_item(line)
+        extra = len(other_lines) - len(shown_lines)
+        if extra > 0:
+            items_html += f'<div class="more-hint">… and {extra} more</div>'
 
     violations_block = f"""
         <div class="violations-block">
@@ -377,7 +463,7 @@ def render_rule(rule: dict) -> str:
 
 
 def render_section(report: dict) -> str:
-    suite = report["suite"]
+    suite  = report["suite"]
     label, icon = CLASS_LABELS.get(suite, (suite, ""))
     passed = report["passed"]
     failed = report["failed"]
@@ -385,10 +471,11 @@ def render_section(report: dict) -> str:
 
     rules_html = "\n".join(render_rule(r) for r in report["rules"])
 
+    passed_badge = f'<span class="badge pass">{passed} passed</span>' if passed else ""
     status_badge = (
-        f'<span class="badge pass">{passed} passed</span>'
-        f'<span class="badge fail">{failed} failed</span>'
-        f'<span class="badge neutral">{total} rules</span>'
+        passed_badge
+        + f'<span class="badge fail">{failed} failed</span>'
+        + f'<span class="badge neutral">{total} rules</span>'
     )
 
     return f"""
@@ -411,7 +498,8 @@ def build_html(reports: list[dict]) -> str:
     timestamp    = datetime.datetime.now().strftime("%d %b %Y, %H:%M")
 
     verdict_cls  = "clean" if total_failed == 0 else "violations"
-    verdict_text = "All rules pass" if total_failed == 0 else f"{total_failed} violation{'s' if total_failed != 1 else ''} found"
+    verdict_text = ("All rules pass" if total_failed == 0
+                    else f"{total_failed} violation{'s' if total_failed != 1 else ''} found")
 
     sections_html = "\n".join(render_section(r) for r in reports)
 
@@ -428,7 +516,7 @@ def build_html(reports: list[dict]) -> str:
 <header>
     <div>
         <h1>Architecture Governance Report</h1>
-        <div class="meta">Structural Fitness Agent — ArchUnit fitness functions</div>
+        <div class="meta">Structural Fitness Agent · API &amp; Integration Fitness Agent</div>
     </div>
     <div class="timestamp">Generated {timestamp}</div>
 </header>
@@ -455,7 +543,7 @@ def build_html(reports: list[dict]) -> str:
     {sections_html}
 </main>
 
-<footer>Structural Fitness Agent &nbsp;·&nbsp; Architecture Governance with AI</footer>
+<footer>Structural Fitness Agent &nbsp;·&nbsp; API &amp; Integration Fitness Agent &nbsp;·&nbsp; Architecture Governance with AI</footer>
 
 </body>
 </html>"""
@@ -466,44 +554,53 @@ def build_html(reports: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run architecture fitness functions and open governance report")
-    parser.add_argument("--reset", action="store_true",
-                        help="Remove AI-generated tests before running — use for the BEFORE state of the demo")
-    parser.add_argument("--no-run", action="store_true",
-                        help="Skip mvn test — regenerate report from last run")
+    parser = argparse.ArgumentParser(
+        description="Run architecture governance agents and open unified report"
+    )
+    parser.add_argument("--reset",      action="store_true",
+                        help="Delete all generated artifacts before running")
+    parser.add_argument("--structural", action="store_true",
+                        help="Run structural fitness agent only")
+    parser.add_argument("--api",        action="store_true",
+                        help="Run API fitness agent only")
+    parser.add_argument("--no-run",     action="store_true",
+                        help="Skip agents — regenerate report from last artifacts")
     args = parser.parse_args()
 
     if args.reset:
-        removed = []
-        for path in (GENERATED_FILE, GENERATED_CLASS, GENERATED_XML):
-            if path.exists():
-                path.unlink()
-                removed.append(path.name)
-        if removed:
-            print(f"Cleared AI-generated tests ({', '.join(removed)}) — showing hand-authored only.")
-        else:
-            print("No AI-generated tests found — already clean.")
+        do_reset()
 
     if not args.no_run:
-        run_tests()
+        run_both = not args.structural and not args.api
+        if run_both or args.structural:
+            run_structural()
+            run_mvn_tests()
+        if run_both or args.api:
+            run_api()
 
-    xml_files = sorted(REPORTS_DIR.glob("TEST-*.xml")) if REPORTS_DIR.exists() else []
-    if not xml_files:
+    # Collect reports
+    reports = []
+
+    if REPORTS_DIR.exists():
+        for xml_file in sorted(REPORTS_DIR.glob("TEST-*.xml")):
+            reports.append(load_surefire_report(xml_file))
+
+    if JUNIT_FILE.exists():
+        reports.append(load_spectral_report(JUNIT_FILE))
+
+    if not reports:
         sys.exit(
-            f"No test reports found at: {REPORTS_DIR}\n"
-            f"Run:  python3 run_tests.py"
+            "No test reports found. Run:\n"
+            "  python3 run_tests.py"
         )
-
-    reports = [load_report(f) for f in xml_files]
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_HTML.write_text(build_html(reports), encoding="utf-8")
 
-    # Print brief terminal summary
     total_rules  = sum(r["total"]  for r in reports)
     total_passed = sum(r["passed"] for r in reports)
     total_failed = sum(r["failed"] for r in reports)
-    print(f"Rules: {total_rules}  |  Passed: {total_passed}  |  Violations: {total_failed}")
+    print(f"\nRules: {total_rules}  |  Passed: {total_passed}  |  Violations: {total_failed}")
     print(f"Report: {OUTPUT_HTML}")
 
     webbrowser.open(OUTPUT_HTML.as_uri())
