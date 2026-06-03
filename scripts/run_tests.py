@@ -452,13 +452,22 @@ def render_rule(rule: dict) -> str:
             <span class="rule-name {name_cls}">{esc(display_name(name))}</span>
         </div>"""
 
-    # ArchUnit: separate summary line from detail lines
+    # ArchUnit: separate summary line from detail lines.
+    # The raw summary is the verbose rule definition — not useful to display since
+    # the rule name is already shown as the header. Extract just the count instead.
     summary_lines = [l for l in viols if "was violated" in l or "Architecture Violation" in l]
     detail_lines  = [l for l in viols if l not in summary_lines]
 
     summary_html = ""
     if summary_lines:
-        summary_html = f'<div class="violation-summary">{esc(summary_lines[0])}</div>'
+        # Extract "N times" from the summary, e.g. "was violated (3 times):"
+        count_match = re.search(r"\((\d+)\s+times?\)", " ".join(summary_lines))
+        if count_match:
+            count = int(count_match.group(1))
+            label = f"{count} violation{'s' if count != 1 else ''} found"
+        else:
+            label = "violations found"
+        summary_html = f'<div class="violation-summary">{esc(label)}</div>'
 
     violation_items = [l for l in detail_lines
                        if l.startswith(("Method ", "Field ", "Constructor ", "Class "))]
