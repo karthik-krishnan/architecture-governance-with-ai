@@ -1,6 +1,6 @@
-package com.example.restaurant.order.repository;
+package com.example.orders.repository;
 
-import com.example.restaurant.order.domain.Order;
+import com.example.orders.domain.Order;
 
 import java.util.HashMap;
 import java.util.Map;

@@ -1,4 +1,4 @@
-package com.example.restaurant.order;
+package com.example.orders;
 
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
@@ -10,7 +10,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 @AnalyzeClasses(
-        packages = "com.example.restaurant.order",
+        packages = "com.example.orders",
         importOptions = ImportOption.DoNotIncludeTests.class
 )
 public class ArchitectureFitnessFunctionsTest {
@@ -54,7 +54,7 @@ public class ArchitectureFitnessFunctionsTest {
     @ArchTest
     static final SliceRule no_cyclic_dependencies_between_layers =
             slices()
-                    .matching("com.example.restaurant.order.(*)..")
+                    .matching("com.example.orders.(*)..")
                     .should().beFreeOfCycles()
                     .because("Cyclic layer dependencies make the codebase impossible to reason about, " +
                              "test in isolation, or deploy independently");
@@ -66,9 +66,9 @@ public class ArchitectureFitnessFunctionsTest {
     static final ArchRule repositories_only_accessible_from_application_or_infrastructure =
             noClasses()
                     .that().resideOutsideOfPackages(
-                            "com.example.restaurant.order.application",
-                            "com.example.restaurant.order.infrastructure",
-                            "com.example.restaurant.order.repository"
+                            "com.example.orders.application",
+                            "com.example.orders.infrastructure",
+                            "com.example.orders.repository"
                     )
                     .should().accessClassesThat().resideInAPackage("..repository..")
                     .because("Uncontrolled repository access from controllers or domain objects " +

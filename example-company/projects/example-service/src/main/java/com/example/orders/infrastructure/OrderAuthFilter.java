@@ -1,4 +1,4 @@
-package com.example.restaurant.order.infrastructure;
+package com.example.orders.infrastructure;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;

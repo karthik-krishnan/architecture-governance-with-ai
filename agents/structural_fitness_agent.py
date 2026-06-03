@@ -68,7 +68,7 @@ REPO_ROOT      = AGENTS_DIR.parent
 SKILLS_DIR     = REPO_ROOT / "skills"
 
 GOVERNANCE_DIR = REPO_ROOT / "example-company" / "architecture"
-PROJECT_DIR    = REPO_ROOT / "example-company" / "projects" / "order-service"
+PROJECT_DIR    = REPO_ROOT / "example-company" / "projects" / "example-service"
 
 DEPLOY_PKG     = "com.example.governance"
 DEPLOY_CLASS   = "GeneratedFitnessFunctionsTest.java"
@@ -403,7 +403,7 @@ def main() -> None:
         type=pathlib.Path,
         default=PROJECT_DIR,
         help="Path to the Maven project root whose src/ will be scanned "
-             "(default: example-company/projects/order-service)",
+             "(default: example-company/projects/example-service)",
     )
     parser.add_argument(
         "--refresh-tests", action="store_true",

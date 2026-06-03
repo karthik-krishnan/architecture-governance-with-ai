@@ -8,8 +8,8 @@
 
 ## Context
 
-The QSR digital platform is decomposed into independent bounded contexts: Order Management,
-Loyalty, Kitchen Display, Payment, Inventory, Delivery Orchestration, Franchise, and Analytics.
+The Example Company digital platform is decomposed into independent bounded contexts: Order Management,
+Loyalty, Fulfilment, Payment, Inventory, and Analytics.
 Each context is owned by a separate engineering team with its own release cadence and SLO.
 
 As the platform has grown, teams have taken shortcuts — importing domain entities and

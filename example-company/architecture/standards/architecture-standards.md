@@ -1,9 +1,9 @@
-# Enterprise Architecture Standards — QSR Digital Platform
+# Enterprise Architecture Standards — Example Company Digital Platform
 
 **Version:** 2.4  
 **Owner:** Enterprise Architecture Council  
 **Last reviewed:** Q1 2026  
-**Applies to:** All services on the QSR Digital Platform
+**Applies to:** All services on the Example Company Digital Platform
 
 ---
 

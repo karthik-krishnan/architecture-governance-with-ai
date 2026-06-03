@@ -88,7 +88,7 @@ architecture-governance-with-ai/
     │   └── standards/               ← API style guide and architecture standards
     │
     └── projects/
-        └── order-service/           ← a Java microservice being governed
+        └── example-service/           ← a Java microservice being governed
             ├── service-description.md
             ├── src/                 ← Java source (contains intentional violations)
             └── pom.xml
@@ -110,10 +110,10 @@ Running the agents produces all the rest.
 
 | Generated artefact | Agent | Where |
 |--------------------|-------|-------|
-| `generated-tests/…GeneratedFitnessFunctionsTest.java` | Structural | `projects/order-service/` |
-| `target/surefire-reports/TEST-*.xml` | Structural | `projects/order-service/` |
-| `generated-specs/openapi.yaml` | API | `projects/order-service/` |
-| `generated-specs/spectral-junit.xml` | API | `projects/order-service/` |
+| `generated-tests/…GeneratedFitnessFunctionsTest.java` | Structural | `projects/example-service/` |
+| `target/surefire-reports/TEST-*.xml` | Structural | `projects/example-service/` |
+| `generated-specs/openapi.yaml` | API | `projects/example-service/` |
+| `generated-specs/spectral-junit.xml` | API | `projects/example-service/` |
 | `architecture/spectral-ruleset.yaml` | API | `example-company/` |
 
 ---

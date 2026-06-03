@@ -1,8 +1,8 @@
-package com.example.restaurant.order.controller;
+package com.example.orders.controller;
 
-import com.example.restaurant.order.application.OrderService;
-import com.example.restaurant.order.domain.Order;
-import com.example.restaurant.order.repository.OrderRepository; // VIOLATION: controller → repository
+import com.example.orders.application.OrderService;
+import com.example.orders.domain.Order;
+import com.example.orders.repository.OrderRepository; // VIOLATION: controller → repository
 import org.springframework.web.bind.annotation.*;
 
 // API VIOLATION §1: path must start with /v{n}/ — /orders has no version prefix

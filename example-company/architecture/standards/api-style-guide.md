@@ -1,4 +1,4 @@
-# QSR Digital Platform — API Style Guide
+# Example Company Digital Platform — API Style Guide
 
 **Version:** 3.0  
 **Owner:** Platform Architecture  

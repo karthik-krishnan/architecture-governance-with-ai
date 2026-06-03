@@ -59,7 +59,7 @@ REPO_ROOT     = AGENTS_DIR.parent
 SKILLS_DIR    = REPO_ROOT / "skills"
 
 GOVERNANCE_DIR = REPO_ROOT / "example-company" / "architecture"
-PROJECT_DIR    = REPO_ROOT / "example-company" / "projects" / "order-service"
+PROJECT_DIR    = REPO_ROOT / "example-company" / "projects" / "example-service"
 
 GENERATED_DIR = PROJECT_DIR / "generated-specs"
 OPENAPI_FILE  = GENERATED_DIR / "openapi.yaml"
@@ -559,7 +559,7 @@ def main() -> None:
         type=pathlib.Path,
         default=PROJECT_DIR,
         help="Path to the service project root whose src/ will be scanned "
-             "(default: example-company/projects/order-service)",
+             "(default: example-company/projects/example-service)",
     )
     parser.add_argument(
         "--refresh-ruleset", action="store_true",

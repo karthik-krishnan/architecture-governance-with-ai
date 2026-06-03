@@ -34,7 +34,7 @@ import xml.etree.ElementTree as ET
 SCRIPTS_DIR     = pathlib.Path(__file__).parent
 REPO_ROOT       = SCRIPTS_DIR.parent
 GOVERNANCE_DIR  = REPO_ROOT / "example-company" / "architecture"
-PROJECT_DIR     = REPO_ROOT / "example-company" / "projects" / "order-service"
+PROJECT_DIR     = REPO_ROOT / "example-company" / "projects" / "example-service"
 REPORTS_DIR     = PROJECT_DIR / "target" / "surefire-reports"
 GENERATED_SPECS = PROJECT_DIR / "generated-specs"
 OUTPUT_DIR      = REPO_ROOT / "outputs"
@@ -620,7 +620,7 @@ def main() -> None:
         type=pathlib.Path,
         default=PROJECT_DIR,
         help="Path to the Maven project root to scan and test "
-             "(default: example-company/projects/order-service)",
+             "(default: example-company/projects/example-service)",
     )
     args = parser.parse_args()
 

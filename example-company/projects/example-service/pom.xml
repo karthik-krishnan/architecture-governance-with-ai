@@ -4,16 +4,16 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.example.restaurant</groupId>
-    <artifactId>restaurant-order-demo</artifactId>
+    <groupId>com.example</groupId>
+    <artifactId>example-service</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <name>Restaurant Order Service — Architecture Governance Demo</name>
+    <name>Example Service — Architecture Governance Demo</name>
     <description>
-        Demonstrates architecture fitness functions using ArchUnit.
-        Production code intentionally violates layered-architecture rules.
-        ArchUnit tests codify those rules — they fail by design.
+        Example service used to demonstrate architecture fitness functions with ArchUnit.
+        Production code intentionally violates governance rules so the generated
+        fitness functions have something to catch.
     </description>
 
     <properties>

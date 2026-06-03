@@ -1,4 +1,4 @@
-package com.example.restaurant.order.infrastructure;
+package com.example.orders.infrastructure;
 
 import org.springframework.web.client.RestTemplate; // VIOLATION: RestTemplate is banned per ADR-017 — use WebClient
 

@@ -1,7 +1,7 @@
-package com.example.restaurant.order.domain;
+package com.example.orders.domain;
 
-import com.example.restaurant.order.application.OrderService;           // VIOLATION: circular — domain → application
-import com.example.restaurant.order.infrastructure.PaymentGatewayClient; // VIOLATION: domain → infrastructure
+import com.example.orders.application.OrderService;           // VIOLATION: circular — domain → application
+import com.example.orders.infrastructure.PaymentGatewayClient; // VIOLATION: domain → infrastructure
 
 public class Order {
 

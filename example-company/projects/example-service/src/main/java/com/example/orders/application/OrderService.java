@@ -1,8 +1,8 @@
-package com.example.restaurant.order.application;
+package com.example.orders.application;
 
-import com.example.restaurant.order.domain.Order;
-import com.example.restaurant.order.infrastructure.PaymentGatewayClient; // VIOLATION: application → concrete infrastructure
-import com.example.restaurant.order.repository.OrderRepository;
+import com.example.orders.domain.Order;
+import com.example.orders.infrastructure.PaymentGatewayClient; // VIOLATION: application → concrete infrastructure
+import com.example.orders.repository.OrderRepository;
 import com.example.loyalty.repository.LoyaltyRepository; // VIOLATION: cross-context — Order reaching into Loyalty's repository
 
 public class OrderService {

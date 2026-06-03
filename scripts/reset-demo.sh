@@ -3,7 +3,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT_DIR="$REPO_ROOT/example-company/projects/order-service"
+PROJECT_DIR="$REPO_ROOT/example-company/projects/example-service"
 GOVERNANCE_DIR="$REPO_ROOT/example-company/architecture"
 
 echo ""
@@ -13,7 +13,7 @@ echo ""
 # Generated ArchUnit fitness functions (structural agent output)
 if [ -d "$PROJECT_DIR/generated-tests" ]; then
     rm -rf "$PROJECT_DIR/generated-tests"
-    echo "  ✓  deleted example-company/projects/order-service/generated-tests/"
+    echo "  ✓  deleted example-company/projects/example-service/generated-tests/"
 else
     echo "  –  generated-tests/ (already absent)"
 fi
@@ -21,7 +21,7 @@ fi
 # Generated OpenAPI spec + Spectral JUnit report (API agent output)
 if [ -d "$PROJECT_DIR/generated-specs" ]; then
     rm -rf "$PROJECT_DIR/generated-specs"
-    echo "  ✓  deleted example-company/projects/order-service/generated-specs/"
+    echo "  ✓  deleted example-company/projects/example-service/generated-specs/"
 else
     echo "  –  generated-specs/ (already absent)"
 fi
