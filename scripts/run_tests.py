@@ -30,6 +30,7 @@ import subprocess
 import sys
 import webbrowser
 import xml.etree.ElementTree as ET
+from urllib.parse import unquote
 
 SCRIPTS_DIR     = pathlib.Path(__file__).parent
 REPO_ROOT       = SCRIPTS_DIR.parent
@@ -170,6 +171,70 @@ def load_ruleset_rule_ids() -> list[str]:
     return re.findall(r"^  ([a-z][a-z0-9-]+):\s*$", content, re.MULTILINE)
 
 
+def load_openapi_spec(spec_path: pathlib.Path) -> dict:
+    """Load the generated OpenAPI YAML; return empty dict if unavailable."""
+    if not spec_path.exists():
+        return {}
+    try:
+        import yaml as pyyaml
+        return pyyaml.safe_load(spec_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def actual_responses(spec: dict, json_ptr: str) -> str:
+    """Given a JSON pointer like #/paths/~1orders/post/responses, return the
+    response codes actually declared in the spec, e.g. 'Found: 200, 404'.
+    Returns empty string if the pointer isn't a responses location or spec is absent.
+    """
+    if not json_ptr.startswith("#/paths/"):
+        return ""
+    parts = json_ptr[2:].split("/")   # ["paths", "~1orders", "post", "responses", ...]
+    if len(parts) < 4 or parts[3] != "responses":
+        return ""
+    api_path = unquote(parts[1].replace("~1", "/").replace("~0", "~"))
+    method   = parts[2].lower()
+    try:
+        codes = sorted(
+            str(k) for k in
+            spec.get("paths", {}).get(api_path, {}).get(method, {}).get("responses", {}).keys()
+        )
+        return f"Found: {', '.join(codes)}" if codes else ""
+    except Exception:
+        return ""
+
+
+def decode_spectral_location(json_ptr: str) -> str:
+    """Convert a Spectral JSON pointer to a readable API location.
+
+    Examples:
+      #/paths/~1orders                       →  /orders
+      #/paths/~1orders/post                  →  POST /orders
+      #/paths/~1orders/post/responses        →  POST /orders → responses
+      #/paths/~1orders~1%7BorderId%7D        →  /orders/{orderId}
+      #/components/schemas/ErrorResponse     →  components/schemas/ErrorResponse
+    """
+    if not json_ptr.startswith("#/"):
+        return json_ptr
+
+    parts = json_ptr[2:].split("/")   # strip "#/" then split on "/"
+
+    if parts[0] == "paths" and len(parts) >= 2:
+        api_path = unquote(parts[1].replace("~1", "/").replace("~0", "~"))
+        if len(parts) == 2:
+            return api_path
+        method = parts[2].upper()
+        http_methods = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+        if method in http_methods:
+            tail = " → " + "/".join(parts[3:]) if len(parts) > 3 else ""
+            return f"{method} {api_path}{tail}"
+        return f"{api_path} / {'/'.join(parts[2:])}"
+
+    # Non-path location: just decode and return
+    decoded = json_ptr[2:].replace("~1", "/").replace("~0", "~")
+    return unquote(decoded)
+
+
 def load_spectral_report(xml_path: pathlib.Path) -> dict:
     """Parse spectral --format junit output.
 
@@ -180,6 +245,7 @@ def load_spectral_report(xml_path: pathlib.Path) -> dict:
     Spectral sometimes emits non-XML text (warnings, notices) before or after
     the XML document. We extract just the XML portion before parsing.
     """
+    spec = load_openapi_spec(xml_path.parent / "openapi.yaml")
     content = xml_path.read_text(encoding="utf-8")
 
     # Find the start of the XML document
@@ -208,13 +274,32 @@ def load_spectral_report(xml_path: pathlib.Path) -> dict:
         return {"suite": "spectral", "total": 0, "passed": 0, "failed": 0, "rules": []}
 
     # Collect violations grouped by rule ID
+    # Spectral name attr is "org.spectral.{rule-id}(#/json/pointer)" — split off location.
     rule_violations: dict[str, list[str]] = {}
     for tc in suite_el.findall("testcase"):
-        rule_id  = tc.attrib.get("name", "unknown")
-        location = tc.attrib.get("classname", "")
+        raw_name = tc.attrib.get("name", "unknown")
+
+        # Split rule id from the JSON pointer location embedded in the name
+        loc_match = re.match(r'^(.+?)\((.+)\)$', raw_name)
+        if loc_match:
+            rule_id  = loc_match.group(1)          # e.g. "org.spectral.qsr-api-versioned-paths"
+            json_ptr = loc_match.group(2)           # e.g. "#/paths/~1orders/post/responses"
+            location = decode_spectral_location(json_ptr)
+        else:
+            rule_id  = raw_name
+            json_ptr = ""
+            location = ""
+
         f = tc.find("failure")
         if f is not None:
-            msg    = f.attrib.get("message", "") or (f.text or "").strip().splitlines()[0]
+            msg = f.attrib.get("message", "") or (f.text or "").strip().splitlines()[0]
+            # Strip JS object stringification that appears when {{value}} resolves to an object
+            msg = re.sub(r'\s*Found:\s*\[object Object\]', '', msg).strip()
+            # For response-schema rules, append what codes ARE declared so the reader
+            # sees both the missing requirement and what the spec actually has.
+            found = actual_responses(spec, json_ptr)
+            if found:
+                msg = f"{msg} ({found})"
             detail = f"{location}: {msg}" if location else msg
             rule_violations.setdefault(rule_id, []).append(detail)
 

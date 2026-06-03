@@ -196,6 +196,11 @@ def strip_yaml_fences(text: str) -> str:
     return text.strip()
 
 
+def sanitize_js_regex(yaml_text: str) -> str:
+    """Strip PCRE inline flags (e.g. (?i)) that are invalid in Node.js/Spectral regex."""
+    return re.sub(r'\(\?[iIsSmMuUxX]+\)', '', yaml_text)
+
+
 # ---------------------------------------------------------------------------
 # SHA-256 staleness helpers
 # ---------------------------------------------------------------------------
@@ -454,7 +459,7 @@ def run_ruleset_generator(client: AnthropicFoundry, model: str,
         print()
 
         raw          = "".join(collected)
-        ruleset_yaml = strip_yaml_fences(raw)
+        ruleset_yaml = sanitize_js_regex(strip_yaml_fences(raw))
 
         # ── Verify: can Spectral actually execute this ruleset? ────────────
         print("  Verifying ruleset is executable by Spectral...", end="", flush=True)

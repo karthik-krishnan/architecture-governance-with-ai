@@ -1,37 +1,37 @@
 #!/usr/bin/env bash
 # reset-demo.sh — wipe all agent-generated artifacts so the demo runs from scratch
+#
+# Cleans generated artifacts across ALL company folders (not just example-company),
+# matching the same patterns used in .gitignore.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT_DIR="$REPO_ROOT/example-company/projects/example-service"
-GOVERNANCE_DIR="$REPO_ROOT/example-company/architecture"
 
 echo ""
 echo "Resetting demo — removing all generated artifacts..."
 echo ""
 
-# Generated ArchUnit fitness functions (structural agent output)
-if [ -d "$PROJECT_DIR/generated-tests" ]; then
-    rm -rf "$PROJECT_DIR/generated-tests"
-    echo "  ✓  deleted example-company/projects/example-service/generated-tests/"
-else
-    echo "  –  generated-tests/ (already absent)"
+# Generated ArchUnit fitness functions and OpenAPI specs (under any projects/ tree)
+count=0
+while IFS= read -r -d '' dir; do
+    rel="${dir#$REPO_ROOT/}"
+    rm -rf "$dir"
+    echo "  ✓  deleted $rel"
+    count=$((count + 1))
+done < <(find "$REPO_ROOT" -type d \( -name "generated-tests" -o -name "generated-specs" \) -not -path "*/node_modules/*" -print0)
+if [ "$count" -eq 0 ]; then
+    echo "  –  generated-tests/ and generated-specs/ (already absent)"
 fi
 
-# Generated OpenAPI spec + Spectral JUnit report (API agent output)
-if [ -d "$PROJECT_DIR/generated-specs" ]; then
-    rm -rf "$PROJECT_DIR/generated-specs"
-    echo "  ✓  deleted example-company/projects/example-service/generated-specs/"
-else
-    echo "  –  generated-specs/ (already absent)"
-fi
-
-# Generated Spectral ruleset (API agent output, lives in architecture/)
-RULESET="$GOVERNANCE_DIR/spectral-ruleset.yaml"
-if [ -f "$RULESET" ]; then
-    rm "$RULESET"
-    echo "  ✓  deleted example-company/architecture/spectral-ruleset.yaml"
-else
+# Generated Spectral rulesets (under any architecture/ tree)
+count=0
+while IFS= read -r -d '' file; do
+    rel="${file#$REPO_ROOT/}"
+    rm "$file"
+    echo "  ✓  deleted $rel"
+    count=$((count + 1))
+done < <(find "$REPO_ROOT" -type f -name "spectral-ruleset.yaml" -not -path "*/node_modules/*" -print0)
+if [ "$count" -eq 0 ]; then
     echo "  –  spectral-ruleset.yaml (already absent)"
 fi
 
