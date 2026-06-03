@@ -4,19 +4,22 @@ Architecture Governance — Unified Dashboard
 =============================================
 Orchestrates fitness function agents and renders a combined HTML report.
 
-Demo flow:
-    python3 run_tests.py --reset        # BEFORE: clear all generated artifacts
-    python3 run_tests.py                # AFTER: run both agents, open unified report
-
-Other flags:
+Usage:
+    python3 run_tests.py                # run both agents, open unified report
     python3 run_tests.py --structural   # structural agent only
     python3 run_tests.py --api          # API agent only
     python3 run_tests.py --no-run       # regenerate report from last artifacts
+
+Caching:
+    Structural tests regenerate only when ADRs or arch specs change.
+    Spectral ruleset regenerates only when the API style guide changes.
+    Use --refresh-tests / --refresh-ruleset to force regeneration.
 """
 
 import argparse
 import datetime
 import pathlib
+import re
 import subprocess
 import sys
 import webbrowser
@@ -29,14 +32,7 @@ GENERATED_SPECS = MAVEN_ROOT / "generated-specs"
 OUTPUT_DIR      = SCRIPT_DIR / "outputs"
 OUTPUT_HTML     = OUTPUT_DIR / "governance-report.html"
 
-# Structural reset targets
-GENERATED_FILE  = MAVEN_ROOT / "generated-tests" / "com" / "example" / "governance" / "GeneratedFitnessFunctionsTest.java"
-GENERATED_CLASS = MAVEN_ROOT / "target" / "test-classes" / "com" / "example" / "governance" / "GeneratedFitnessFunctionsTest.class"
-GENERATED_XML   = REPORTS_DIR / "TEST-com.example.governance.GeneratedFitnessFunctionsTest.xml"
-
-# API reset targets
-OPENAPI_FILE    = GENERATED_SPECS / "openapi.yaml"
-RULESET_FILE    = SCRIPT_DIR / "inputs" / "spectral-ruleset.yaml"  # committed; lives in inputs/
+RULESET_FILE    = SCRIPT_DIR / "inputs" / "spectral-ruleset.yaml"
 JUNIT_FILE      = GENERATED_SPECS / "spectral-junit.xml"
 
 MAX_VIOLATIONS_SHOWN = 5
@@ -46,23 +42,6 @@ CLASS_LABELS = {
     "GeneratedFitnessFunctionsTest":    ("AI-generated Fitness Functions",     "✦"),
     "spectral":                         ("AI-generated API Fitness Functions", "⬡"),
 }
-
-
-# ---------------------------------------------------------------------------
-# Reset
-# ---------------------------------------------------------------------------
-
-def do_reset() -> None:
-    removed = []
-    for path in (GENERATED_FILE, GENERATED_CLASS, GENERATED_XML,
-                 OPENAPI_FILE, RULESET_FILE, JUNIT_FILE):
-        if path.exists():
-            path.unlink()
-            removed.append(path.name)
-    if removed:
-        print(f"Cleared generated artifacts ({', '.join(removed)}) — showing hand-authored only.")
-    else:
-        print("No generated artifacts found — already clean.")
 
 
 # ---------------------------------------------------------------------------
@@ -148,11 +127,25 @@ def load_surefire_report(xml_path: pathlib.Path) -> dict:
 # Parse Spectral JUnit XML
 # ---------------------------------------------------------------------------
 
+def load_ruleset_rule_ids() -> list[str]:
+    """Return all rule IDs defined in the committed Spectral ruleset, in order.
+
+    Uses a simple regex (no extra dependency) — rule IDs sit at exactly two
+    spaces of indent as YAML mapping keys directly under `rules:`.
+    """
+    if not RULESET_FILE.exists():
+        return []
+    content = RULESET_FILE.read_text(encoding="utf-8")
+    # Match lines like "  qsr-some-rule-name:" (exactly 2-space indent, kebab-case id)
+    return re.findall(r"^  ([a-z][a-z0-9-]+):\s*$", content, re.MULTILINE)
+
+
 def load_spectral_report(xml_path: pathlib.Path) -> dict:
     """Parse spectral --format junit output.
 
-    Spectral emits one <testcase> per violation. We group by rule ID (testcase
-    name) so each rule appears once with all its violation locations.
+    Spectral emits one <testcase> per *violation* — passing rules are absent.
+    We augment the result by reading the committed ruleset to discover all rule
+    IDs, then synthesising PASS entries for rules with no violations.
 
     Spectral sometimes emits non-XML text (warnings, notices) before or after
     the XML document. We extract just the XML portion before parsing.
@@ -184,6 +177,7 @@ def load_spectral_report(xml_path: pathlib.Path) -> dict:
     if suite_el is None:
         return {"suite": "spectral", "total": 0, "passed": 0, "failed": 0, "rules": []}
 
+    # Collect violations grouped by rule ID
     rule_violations: dict[str, list[str]] = {}
     for tc in suite_el.findall("testcase"):
         rule_id  = tc.attrib.get("name", "unknown")
@@ -194,13 +188,33 @@ def load_spectral_report(xml_path: pathlib.Path) -> dict:
             detail = f"{location}: {msg}" if location else msg
             rule_violations.setdefault(rule_id, []).append(detail)
 
-    rules = [
-        {"name": rule_id, "passed": False, "violations": viols}
-        for rule_id, viols in rule_violations.items()
-    ]
-    failed = len(rules)
+    # Read all rule IDs from the committed ruleset so we can show passing rules too
+    all_rule_ids = load_ruleset_rule_ids()
 
-    return {"suite": "spectral", "total": failed, "passed": 0,
+    if all_rule_ids:
+        # Failing rules first (prominent), then passing rules
+        rules: list[dict] = [
+            {"name": rid, "passed": False, "violations": viols}
+            for rid, viols in rule_violations.items()
+        ]
+        failing_ids = set(rule_violations.keys())
+        rules += [
+            {"name": rid, "passed": True, "violations": []}
+            for rid in all_rule_ids
+            if rid not in failing_ids
+        ]
+        total  = len(all_rule_ids)
+        failed = len(failing_ids)
+        passed = total - failed
+    else:
+        # Ruleset not available — fall back to violations-only
+        rules  = [{"name": rid, "passed": False, "violations": v}
+                  for rid, v in rule_violations.items()]
+        failed = len(rules)
+        total  = failed
+        passed = 0
+
+    return {"suite": "spectral", "total": total, "passed": passed,
             "failed": failed, "rules": rules}
 
 
@@ -581,8 +595,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run architecture governance agents and open unified report"
     )
-    parser.add_argument("--reset",      action="store_true",
-                        help="Delete all generated artifacts before running")
     parser.add_argument("--structural", action="store_true",
                         help="Run structural fitness agent only")
     parser.add_argument("--api",        action="store_true",
@@ -590,9 +602,6 @@ def main() -> None:
     parser.add_argument("--no-run",     action="store_true",
                         help="Skip agents — regenerate report from last artifacts")
     args = parser.parse_args()
-
-    if args.reset:
-        do_reset()
 
     if not args.no_run:
         run_both = not args.structural and not args.api

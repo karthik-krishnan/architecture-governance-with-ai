@@ -22,8 +22,11 @@ controller on the platform.
 1. **Service description** — bounded context names, package root, ownership
 2. **Architecture standards** — the enterprise rules the platform must meet
 3. **ADRs** — specific decisions with their enforcement intent and naming convention notes
-4. **Codebase scan** — what the scanner found: violations, layers, SDK usage
-5. **API specs** (optional) — inform API contract rules
+4. **API specs** (optional) — inform API contract rules
+
+The source code is not an input. Rules are derived from governance decisions, not from
+what the current code happens to look like. If a rule is correct per the ADR, generate
+it — the test will pass or fail against the actual code on every build.
 
 ---
 
@@ -35,7 +38,10 @@ For each ADR read:
 - What is the decision?
 - What naming convention does it reference (suffixes, package segments)?
 - What is the violation pattern (A must not import B)?
-- Is the violation currently present in the codebase scan? If yes → mark `ENFORCED CANDIDATE`. If no violations found → mark `ADVISORY`.
+
+Every rule extracted from an ADR is `ENFORCED CANDIDATE` by default. Mark a rule
+`REQUIRES MIGRATION FIRST` only when the ADR itself explicitly notes that a migration
+window is needed before enforcement.
 
 ### Step 2 — Write generic ArchUnit rules
 
@@ -59,17 +65,14 @@ Bad names are opaque identifiers:
 ### Step 3 — Assign status
 
 Each rule gets one of:
-- `// Status: ENFORCED CANDIDATE` — violations confirmed in scan, ready to block CI after migration
-- `// Status: ADVISORY` — no violations currently, monitor only
-- `// Status: REQUIRES MIGRATION FIRST` — violations exist but migration must complete before enforcing
+- `// Status: ENFORCED CANDIDATE` — default for all rules derived from an ADR
+- `// Status: REQUIRES MIGRATION FIRST` — only when the ADR explicitly flags a migration window
 
-### Step 4 — Add promotion notes
+### Step 4 — Add migration notes (REQUIRES MIGRATION FIRST only)
 
-Below each ADVISORY or REQUIRES MIGRATION rule, add a comment block:
 ```java
-// Promote to enforced when:
-// - [ ] {prerequisite 1}
-// - [ ] {prerequisite 2}
+// Enable when:
+// - [ ] {prerequisite from ADR}
 ```
 
 ---

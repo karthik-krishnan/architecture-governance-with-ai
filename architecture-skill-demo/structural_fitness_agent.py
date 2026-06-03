@@ -40,6 +40,7 @@ Prerequisites:
         AZURE_INFERENCE_MODEL=claude-3-7-sonnet   # optional, this is the default
 """
 
+import hashlib
 import os
 import re
 import sys
@@ -69,6 +70,8 @@ MAVEN_ROOT    = SKILL_DIR.parent
 DEPLOY_PKG    = "com.example.governance"
 GENERATED_DIR = MAVEN_ROOT / "generated-tests" / "com" / "example" / "governance"
 DEPLOY_CLASS  = "GeneratedFitnessFunctionsTest.java"
+
+GOVERNANCE_HASH_PREFIX = "// governance-hash: "
 
 # Resolved after .env is loaded in main(); default used here as a fallback
 # for any code that runs before main() (tests, imports, etc.)
@@ -116,6 +119,58 @@ def strip_markdown_fences(text: str) -> str:
     text = re.sub(r"^```(?:java)?\n", "", text)
     text = re.sub(r"\n```$", "", text)
     return text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Governance-hash staleness helpers
+# ---------------------------------------------------------------------------
+
+def compute_governance_hash() -> str:
+    """Hash of governance inputs that should trigger test regeneration.
+
+    Covers ADRs and architecture specs only — the source code is not an input
+    to test generation. ArchUnit rules are derived from governance decisions,
+    not from what the current code happens to look like. Tests run against the
+    code on every build; they are regenerated only when the rules change.
+    """
+    h = hashlib.sha256()
+
+    for adr in sorted((INPUTS_DIR / "adrs").glob("*.md")):
+        h.update(adr.name.encode())
+        h.update(adr.read_bytes())
+
+    specs_dir = INPUTS_DIR / "specs"
+    for spec in sorted(specs_dir.rglob("*")):
+        if spec.is_file():
+            h.update(str(spec.relative_to(specs_dir)).encode())
+            h.update(spec.read_bytes())
+
+    return h.hexdigest()
+
+
+def extract_governance_hash() -> str | None:
+    """Read the governance hash from the first line of the generated test file."""
+    deploy_path = GENERATED_DIR / DEPLOY_CLASS
+    if not deploy_path.exists():
+        return None
+    first_line = deploy_path.read_text(encoding="utf-8").split("\n", 1)[0]
+    if first_line.startswith(GOVERNANCE_HASH_PREFIX):
+        return first_line[len(GOVERNANCE_HASH_PREFIX):].strip()
+    return None
+
+
+def tests_are_stale(governance_hash: str) -> bool:
+    """True if the generated tests don't exist or were built from different inputs."""
+    return extract_governance_hash() != governance_hash
+
+
+def ensure_hash_comment(java_code: str, hash_str: str) -> str:
+    """Guarantee the governance hash is the very first line of the Java file."""
+    header = f"{GOVERNANCE_HASH_PREFIX}{hash_str}"
+    lines  = java_code.split("\n")
+    if lines and lines[0].startswith(GOVERNANCE_HASH_PREFIX):
+        lines = lines[1:]
+    return header + "\n" + "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +244,7 @@ def run_scanner(client: AnthropicFoundry, java_files: list[pathlib.Path],
 # Phase 2+3 — Generator + Verify agentic loop
 # ---------------------------------------------------------------------------
 
-def run_generator_agent(client: AnthropicFoundry, scan_output: str, model: str) -> str:
+def run_generator_agent(client: AnthropicFoundry, model: str) -> str:
 
     generator_skill = read_file(SKILLS_DIR / "archunit-generator.md")
     service_desc    = read_file(INPUTS_DIR / "service-description.md")
@@ -212,8 +267,7 @@ def run_generator_agent(client: AnthropicFoundry, scan_output: str, model: str) 
         f"{'=' * 60}\nSERVICE DESCRIPTION\n{'=' * 60}\n{service_desc}\n\n"
         f"{'=' * 60}\nARCHITECTURE STANDARDS\n{'=' * 60}\n{arch_standards}\n\n"
         f"{'=' * 60}\nARCHITECTURE DECISION RECORDS\n{'=' * 60}\n{adrs}\n\n"
-        f"{'=' * 60}\nSPECS (API style guide, event schemas, etc.)\n{'=' * 60}\n{specs}\n\n"
-        f"{'=' * 60}\nCODEBASE SCAN\n{'=' * 60}\n{scan_output}\n"
+        f"{'=' * 60}\nSPECS (API style guide, event schemas, etc.)\n{'=' * 60}\n{specs}\n"
     )
 
     messages: list[dict] = [{"role": "user", "content": initial_user}]
@@ -285,6 +339,10 @@ def main() -> None:
         default=SKILL_DIR.parent / "src",
         help="Path to Java source root (default: ../src)",
     )
+    parser.add_argument(
+        "--refresh-tests", action="store_true",
+        help="Force regeneration of the fitness functions even if governance inputs haven't changed",
+    )
     args = parser.parse_args()
 
     codebase_path = args.codebase.resolve()
@@ -300,6 +358,32 @@ def main() -> None:
     api_key  = os.environ.get("AZURE_INFERENCE_KEY")
     model    = os.environ.get("AZURE_INFERENCE_MODEL", "claude-3-7-sonnet")
 
+    java_files = collect_java_files(codebase_path)
+
+    # Governance hash covers only ADRs + specs — source code is not an input
+    # to test generation. Tests are regenerated only when governance rules change.
+    governance_hash = compute_governance_hash()
+    stale = args.refresh_tests or tests_are_stale(governance_hash)
+
+    print("\n" + "=" * 70)
+    print("  Structural Fitness Agent")
+    print("=" * 70)
+    print(f"  Provider  : Azure AI Foundry")
+    print(f"  Model     : {model}")
+    print(f"  Codebase  : {codebase_path}  ({len(java_files)} files)")
+    print(f"  ADRs      : {len(list((INPUTS_DIR / 'adrs').glob('*.md')))}")
+    print(f"  Specs     : {len(list((INPUTS_DIR / 'specs').rglob('*.*')))}")
+    print(f"  Max verify attempts : {MAX_COMPILE_ITERATIONS}")
+    tests_status = "regenerate" if args.refresh_tests else ("stale — will regenerate" if stale else "up-to-date")
+    print(f"  Tests     : {tests_status}")
+    print("=" * 70)
+
+    if not stale:
+        print(f"\n  Generated tests are current — governance inputs unchanged.")
+        print(f"  Skipping AI phases. Use --refresh-tests to force regeneration.\n")
+        return
+
+    # Credentials only required when we are about to call the AI
     missing = [name for name, val in [
         ("AZURE_INFERENCE_ENDPOINT", endpoint or None),
         ("AZURE_INFERENCE_KEY",      api_key),
@@ -315,25 +399,12 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
-    java_files = collect_java_files(codebase_path)
-
-    print("\n" + "=" * 70)
-    print("  Structural Fitness Agent")
-    print("=" * 70)
-    print(f"  Provider  : Azure AI Foundry")
-    print(f"  Model     : {model}")
-    print(f"  Codebase  : {codebase_path}  ({len(java_files)} files)")
-    print(f"  ADRs      : {len(list((INPUTS_DIR / 'adrs').glob('*.md')))}")
-    print(f"  Specs     : {len(list((INPUTS_DIR / 'specs').rglob('*.*')))}")
-    print(f"  Max verify attempts : {MAX_COMPILE_ITERATIONS}")
-    print("=" * 70)
-
     client = AnthropicFoundry(
         api_key=api_key,
         base_url=f"{endpoint}/anthropic",
     )
 
-    # ── Phase 1: Scan ────────────────────────────────────────────────────────
+    # ── Phase 1: Scan (for human review — output saved to outputs/, not fed to Phase 2)
     scan_output = run_scanner(client, java_files, codebase_path, model)
     scan_path   = out_dir / "codebase-scan.md"
     scan_path.write_text(
@@ -342,8 +413,12 @@ def main() -> None:
     )
     print(f"\n  Scan saved : {scan_path.name}  ({scan_path.stat().st_size:,} bytes)")
 
-    # ── Phases 2+3: Generate + Verify loop ───────────────────────────────────
-    java_code = run_generator_agent(client, scan_output, model)
+    # ── Phases 2+3: Generate from governance docs + Verify (compile check)
+    java_code = run_generator_agent(client, model)
+
+    # Prepend governance hash — enables staleness detection on the next run
+    java_code = ensure_hash_comment(java_code, governance_hash)
+    (GENERATED_DIR / DEPLOY_CLASS).write_text(java_code, encoding="utf-8")
 
     # Save reference copy in outputs/
     (out_dir / DEPLOY_CLASS).write_text(java_code, encoding="utf-8")
