@@ -182,6 +182,24 @@ def load_openapi_spec(spec_path: pathlib.Path) -> dict:
         return {}
 
 
+def violation_hint(rule_id: str, json_ptr: str, spec: dict) -> str:
+    """Return an 'actual vs expected' hint for known rule patterns.
+
+    Spectral messages say WHAT rule failed; this adds the concrete
+    actual/expected values where they can be derived from the violation location.
+    """
+    rule = rule_id.split(".")[-1]   # strip "org.spectral." prefix
+
+    # Versioned-path rule: actual path is the key, expected is /v{n}/that-path
+    if "versioned-path" in rule and json_ptr.startswith("#/paths/"):
+        parts = json_ptr[2:].split("/")
+        if len(parts) == 2:     # #/paths/{encoded-path} — top-level path key
+            actual_path = unquote(parts[1].replace("~1", "/").replace("~0", "~"))
+            return f"Expected: /v{{n}}{actual_path}"
+
+    return ""
+
+
 def actual_responses(spec: dict, json_ptr: str) -> str:
     """Given a JSON pointer like #/paths/~1orders/post/responses, return the
     response codes actually declared in the spec, e.g. 'Found: 200, 404'.
@@ -295,11 +313,10 @@ def load_spectral_report(xml_path: pathlib.Path) -> dict:
             msg = f.attrib.get("message", "") or (f.text or "").strip().splitlines()[0]
             # Strip JS object stringification that appears when {{value}} resolves to an object
             msg = re.sub(r'\s*Found:\s*\[object Object\]', '', msg).strip()
-            # For response-schema rules, append what codes ARE declared so the reader
-            # sees both the missing requirement and what the spec actually has.
-            found = actual_responses(spec, json_ptr)
-            if found:
-                msg = f"{msg} ({found})"
+            # Append actual-vs-expected hints where they can be derived.
+            hint = violation_hint(rule_id, json_ptr, spec) or actual_responses(spec, json_ptr)
+            if hint:
+                msg = f"{msg} ({hint})"
             detail = f"{location}: {msg}" if location else msg
             rule_violations.setdefault(rule_id, []).append(detail)
 
