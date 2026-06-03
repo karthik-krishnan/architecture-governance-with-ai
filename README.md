@@ -151,17 +151,22 @@ python3 run_tests.py --no-run       # regenerate report from existing artifacts
 Generates ArchUnit tests from governance documents — not from the code.
 
 ```
+Codebase scan  ──────────────────────────────────────────► outputs/  (human review only)
+
 ADRs + Architecture Specs
          │
-         ▼ (only when governance docs change)
-  Phase 2: archunit-generator skill → GeneratedFitnessFunctionsTest.java
+         ▼  only when governance docs change
+  Test Generation
+    archunit-generator skill → GeneratedFitnessFunctionsTest.java
+    mvn test-compile → if errors, send back to model → retry (up to 3×)
+    → generated-tests/  (compiled into the Maven project)
          │
-         ▼ (always)
-  Phase 3: mvn test → results → HTML report
+         ▼  always
+  mvn test → Surefire XML → HTML report
 ```
 
-Phase 1 (codebase scan) still runs each time and is saved to `outputs/` for
-human review, but it does **not** feed the test generator. Rules come from ADRs.
+The codebase scan runs every time and is saved to `outputs/` for human review,
+but it does **not** feed test generation. Rules come from ADRs.
 A rule is correct because an architect decided it, not because the scanner found a violation.
 
 ### API & Integration Fitness Agent
@@ -171,10 +176,22 @@ Scans the actual codebase and validates it against the platform API style guide.
 ```
 Source code
     │
-    ▼ Phase 1: api-scanner skill → endpoint inventory
-    ▼ Phase 2: openapi-generator skill → openapi.yaml (with x-governance-gap annotations)
-    ▼ Phase 3: spectral-ruleset-generator (skipped if style guide unchanged)
-    ▼ Phase 4: spectral lint → spectral-junit.xml → HTML report
+    ▼  API Scan
+       api-scanner skill → endpoint inventory
+    │
+    ▼  Spec Generation
+       openapi-generator skill → openapi.yaml
+       openapi-spec-validator → if invalid, send back to model → retry (up to 3×)
+       → generated-specs/openapi.yaml  (always regenerated)
+    │
+    ▼  Ruleset Generation  (skipped if style guide SHA unchanged)
+       spectral-ruleset-generator skill → candidate ruleset
+       spectral lint <probe spec> → if Spectral error, send back → retry (up to 3×)
+       → inputs/spectral-ruleset.yaml  (committed governance artifact)
+    │
+    ▼  Lint  (read-only — never modifies the ruleset)
+       spectral lint openapi.yaml vs inputs/spectral-ruleset.yaml
+       → generated-specs/spectral-junit.xml → HTML report
 ```
 
 ---
