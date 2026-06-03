@@ -25,14 +25,16 @@ import sys
 import webbrowser
 import xml.etree.ElementTree as ET
 
-SCRIPT_DIR      = pathlib.Path(__file__).parent
-MAVEN_ROOT      = SCRIPT_DIR.parent
-REPORTS_DIR     = MAVEN_ROOT / "target" / "surefire-reports"
-GENERATED_SPECS = MAVEN_ROOT / "generated-specs"
-OUTPUT_DIR      = SCRIPT_DIR / "outputs"
+SCRIPTS_DIR     = pathlib.Path(__file__).parent
+REPO_ROOT       = SCRIPTS_DIR.parent
+GOVERNANCE_DIR  = REPO_ROOT / "example-company" / "architecture"
+PROJECT_DIR     = REPO_ROOT / "example-company" / "projects" / "order-service"
+REPORTS_DIR     = PROJECT_DIR / "target" / "surefire-reports"
+GENERATED_SPECS = PROJECT_DIR / "generated-specs"
+OUTPUT_DIR      = REPO_ROOT / "outputs"
 OUTPUT_HTML     = OUTPUT_DIR / "governance-report.html"
 
-RULESET_FILE    = SCRIPT_DIR / "inputs" / "spectral-ruleset.yaml"
+RULESET_FILE    = GOVERNANCE_DIR / "spectral-ruleset.yaml"
 JUNIT_FILE      = GENERATED_SPECS / "spectral-junit.xml"
 
 MAX_VIOLATIONS_SHOWN = 5
@@ -51,16 +53,16 @@ CLASS_LABELS = {
 def run_structural() -> None:
     print("\nRunning Structural Fitness Agent...")
     subprocess.run(
-        [sys.executable, str(SCRIPT_DIR / "structural_fitness_agent.py")],
-        cwd=SCRIPT_DIR,
+        [sys.executable, str(REPO_ROOT / "agents" / "structural_fitness_agent.py")],
+        cwd=REPO_ROOT / "agents",
     )
 
 
 def run_api() -> None:
     print("\nRunning API & Integration Fitness Agent...")
     subprocess.run(
-        [sys.executable, str(SCRIPT_DIR / "api_fitness_agent.py")],
-        cwd=SCRIPT_DIR,
+        [sys.executable, str(REPO_ROOT / "agents" / "api_fitness_agent.py")],
+        cwd=REPO_ROOT / "agents",
     )
 
 
@@ -68,7 +70,7 @@ def run_mvn_tests() -> None:
     print("Running ArchUnit tests...", end="", flush=True)
     result = subprocess.run(
         ["mvn", "test", "-Dmaven.test.failure.ignore=true", "--batch-mode", "-q"],
-        cwd=MAVEN_ROOT,
+        cwd=PROJECT_DIR,
         capture_output=True,
     )
     if result.returncode not in (0, 1):

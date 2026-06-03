@@ -63,13 +63,17 @@ except ImportError:
 # Constants
 # ---------------------------------------------------------------------------
 
-SKILL_DIR     = pathlib.Path(__file__).parent
-INPUTS_DIR    = SKILL_DIR / "inputs"
-SKILLS_DIR    = SKILL_DIR / "skills"
-MAVEN_ROOT    = SKILL_DIR.parent
-DEPLOY_PKG    = "com.example.governance"
-GENERATED_DIR = MAVEN_ROOT / "generated-tests" / "com" / "example" / "governance"
-DEPLOY_CLASS  = "GeneratedFitnessFunctionsTest.java"
+AGENTS_DIR     = pathlib.Path(__file__).parent
+REPO_ROOT      = AGENTS_DIR.parent
+SKILLS_DIR     = REPO_ROOT / "skills"
+
+GOVERNANCE_DIR = REPO_ROOT / "example-company" / "architecture"
+PROJECT_DIR    = REPO_ROOT / "example-company" / "projects" / "order-service"
+
+DEPLOY_PKG     = "com.example.governance"
+DEPLOY_CLASS   = "GeneratedFitnessFunctionsTest.java"
+MAVEN_ROOT     = PROJECT_DIR
+GENERATED_DIR  = PROJECT_DIR / "generated-tests" / "com" / "example" / "governance"
 
 GOVERNANCE_HASH_PREFIX = "// governance-hash: "
 
@@ -94,14 +98,14 @@ def read_file(path: pathlib.Path) -> str:
 
 
 def collect_adrs() -> str:
-    adrs = sorted((INPUTS_DIR / "adrs").glob("*.md"))
+    adrs = sorted((GOVERNANCE_DIR / "adrs").glob("*.md"))
     if not adrs:
         return "(no ADRs found)"
     return "\n\n---\n\n".join(f"### {f.name}\n\n{read_file(f)}" for f in adrs)
 
 
 def collect_specs() -> str:
-    specs_dir = INPUTS_DIR / "specs"
+    specs_dir = GOVERNANCE_DIR / "specs"
     docs = (sorted(specs_dir.rglob("*.md"))
             + sorted(specs_dir.rglob("*.yaml"))
             + sorted(specs_dir.rglob("*.json")))
@@ -135,11 +139,11 @@ def compute_governance_hash() -> str:
     """
     h = hashlib.sha256()
 
-    for adr in sorted((INPUTS_DIR / "adrs").glob("*.md")):
+    for adr in sorted((GOVERNANCE_DIR / "adrs").glob("*.md")):
         h.update(adr.name.encode())
         h.update(adr.read_bytes())
 
-    specs_dir = INPUTS_DIR / "specs"
+    specs_dir = GOVERNANCE_DIR / "specs"
     for spec in sorted(specs_dir.rglob("*")):
         if spec.is_file():
             h.update(str(spec.relative_to(specs_dir)).encode())
@@ -247,8 +251,8 @@ def run_scanner(client: AnthropicFoundry, java_files: list[pathlib.Path],
 def run_generator_agent(client: AnthropicFoundry, model: str) -> str:
 
     generator_skill = read_file(SKILLS_DIR / "archunit-generator.md")
-    service_desc    = read_file(INPUTS_DIR / "service-description.md")
-    arch_standards  = read_file(INPUTS_DIR / "architecture-standards.md")
+    service_desc    = read_file(PROJECT_DIR / "service-description.md")
+    arch_standards  = read_file(GOVERNANCE_DIR / "architecture-standards.md")
     adrs            = collect_adrs()
     specs           = collect_specs()
 
@@ -336,7 +340,7 @@ def main() -> None:
     parser.add_argument(
         "--codebase",
         type=pathlib.Path,
-        default=SKILL_DIR.parent / "src",
+        default=PROJECT_DIR / "src",
         help="Path to Java source root (default: ../src)",
     )
     parser.add_argument(
@@ -349,7 +353,7 @@ def main() -> None:
     if not codebase_path.exists():
         sys.exit(f"Codebase path not found: {codebase_path}")
 
-    load_dotenv(SKILL_DIR / ".env")
+    load_dotenv(REPO_ROOT / ".env")
 
     global MAX_COMPILE_ITERATIONS
     MAX_COMPILE_ITERATIONS = int(os.environ.get("MAX_COMPILE_ITERATIONS", "3"))
@@ -395,7 +399,7 @@ def main() -> None:
         )
 
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    out_dir   = SKILL_DIR / "outputs" / f"live-{timestamp}"
+    out_dir   = REPO_ROOT / "outputs" / f"live-{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 

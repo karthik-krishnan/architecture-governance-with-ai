@@ -45,13 +45,14 @@ try:
 except ImportError:
     sys.exit("python-dotenv package not found.  Run: pip install python-dotenv")
 
-SKILL_DIR    = pathlib.Path(__file__).parent
-INPUTS_DIR   = SKILL_DIR / "inputs"
-SKILLS_DIR   = SKILL_DIR / "skills"
-MAVEN_ROOT   = SKILL_DIR.parent
-DEPLOY_PKG   = "com.example.governance"
-GENERATED_DIR = MAVEN_ROOT / "generated-tests" / "com" / "example" / "governance"
-DEPLOY_CLASS  = "GeneratedFitnessFunctionsTest.java"
+SCRIPTS_DIR    = pathlib.Path(__file__).parent
+REPO_ROOT      = SCRIPTS_DIR.parent
+SKILLS_DIR     = REPO_ROOT / "skills"
+GOVERNANCE_DIR = REPO_ROOT / "example-company" / "architecture"
+PROJECT_DIR    = REPO_ROOT / "example-company" / "projects" / "order-service"
+DEPLOY_PKG     = "com.example.governance"
+GENERATED_DIR  = PROJECT_DIR / "generated-tests" / "com" / "example" / "governance"
+DEPLOY_CLASS   = "GeneratedFitnessFunctionsTest.java"
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +71,7 @@ def read_file(path: pathlib.Path) -> str:
 
 
 def collect_adrs() -> str:
-    adr_dir = INPUTS_DIR / "adrs"
+    adr_dir = GOVERNANCE_DIR / "adrs"
     adrs = sorted(adr_dir.glob("*.md"))
     if not adrs:
         return "(no ADRs found)"
@@ -81,7 +82,7 @@ def collect_adrs() -> str:
 
 
 def collect_specs() -> str:
-    specs_dir = INPUTS_DIR / "specs"
+    specs_dir = GOVERNANCE_DIR / "specs"
     docs = sorted(specs_dir.rglob("*.md")) + sorted(specs_dir.rglob("*.yaml")) + sorted(specs_dir.rglob("*.json"))
     if not docs:
         return "(no specs found)"
@@ -159,8 +160,8 @@ def run_scanner(client: AnthropicFoundry, java_files: list[pathlib.Path],
 def run_generator(client: AnthropicFoundry, scan_output: str, model: str) -> str:
 
     generator_skill = read_file(SKILLS_DIR / "archunit-generator.md")
-    service_desc    = read_file(INPUTS_DIR / "service-description.md")
-    arch_standards  = read_file(INPUTS_DIR / "architecture-standards.md")
+    service_desc    = read_file(PROJECT_DIR / "service-description.md")
+    arch_standards  = read_file(GOVERNANCE_DIR / "architecture-standards.md")
     adrs            = collect_adrs()
     specs           = collect_specs()
 
@@ -206,7 +207,7 @@ def main() -> None:
     parser.add_argument(
         "--codebase",
         type=pathlib.Path,
-        default=SKILL_DIR.parent / "src",
+        default=PROJECT_DIR / "src",
         help="Path to Java source root (default: ../src)"
     )
     args = parser.parse_args()
@@ -215,7 +216,7 @@ def main() -> None:
     if not codebase_path.exists():
         sys.exit(f"Codebase path not found: {codebase_path}")
 
-    load_dotenv(SKILL_DIR / ".env")
+    load_dotenv(REPO_ROOT / ".env")
 
     endpoint = os.environ.get("AZURE_INFERENCE_ENDPOINT", "").rstrip("/")
     api_key  = os.environ.get("AZURE_INFERENCE_KEY")
@@ -232,7 +233,7 @@ def main() -> None:
         )
 
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    out_dir   = SKILL_DIR / "outputs" / f"live-{timestamp}"
+    out_dir   = REPO_ROOT / "outputs" / f"live-{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -246,8 +247,8 @@ def main() -> None:
     print(f"  Endpoint  : {endpoint}")
     print(f"  Codebase  : {codebase_path}")
     print(f"  Java files: {len(java_files)}")
-    print(f"  ADRs      : {len(list((INPUTS_DIR / 'adrs').glob('*.md')))}")
-    print(f"  Specs     : {len(list((INPUTS_DIR / 'specs').rglob('*.*')))}")
+    print(f"  ADRs      : {len(list((GOVERNANCE_DIR / 'adrs').glob('*.md')))}")
+    print(f"  Specs     : {len(list((GOVERNANCE_DIR / 'specs').rglob('*.*')))}")
     print("=" * 70)
 
     client = AnthropicFoundry(

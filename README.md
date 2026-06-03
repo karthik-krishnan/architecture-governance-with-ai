@@ -1,283 +1,175 @@
 # Architecture Governance with AI
 
-This project demonstrates how architecture governance can be **automated and AI-assisted**
-at enterprise scale using two complementary approaches:
+Most engineering organisations have an Enterprise Architecture function that publishes
+Architecture Decision Records, technology standards, and API guidelines. The challenge
+is that these documents sit in wikis while code evolves independently — violations
+accumulate silently until a review, an incident, or an audit surfaces them.
 
-1. **Hand-authored fitness functions** — ArchUnit rules written by a tech lead, enforced in CI
-2. **AI-generated fitness functions** — two AI agents that scan the codebase and codify
-   governance rules from architecture decisions and standards
-
-The production code intentionally violates both structural and API rules.  
-The fitness functions **fail by design** — that is the point.
+This project shows a different approach: **use AI agents to read your governance
+documents and automatically generate executable fitness functions** that enforce those
+decisions on every build. The governance docs become the source of truth; the tests are
+a derived artefact.
 
 ---
 
 ## The Core Idea
 
-> "If you can't enforce it, it isn't an architecture rule — it's a suggestion."
+1. **Codify your governance once** — write ADRs, architecture standards, and API style
+   guides as plain documents (the same ones your architects already maintain).
 
-Architecture diagrams and wiki pages drift away from the code the moment they are written.
-Fitness functions express architecture intent as **executable tests** that run in CI and
-break the build the moment a violation is introduced — whether that violation is a layering
-breach, a cross-context import, or a missing API version prefix.
+2. **Run an AI agent against them** — the agent reads those documents and generates
+   executable tests that enforce the rules across your codebase.
 
----
+3. **Tests run on every build** — violations surface as CI failures, not post-hoc
+   review comments.
 
-## Project Structure
-
-```
-├── src/                              Java source with intentional violations
-│   └── main/java/com/example/
-│       ├── restaurant/order/
-│       │   ├── controller/           OrderController  (API + structural violations)
-│       │   ├── application/          OrderService     (cross-context violation)
-│       │   ├── domain/               Order
-│       │   ├── infrastructure/       PaymentGatewayClient
-│       │   └── repository/           OrderRepository
-│       └── loyalty/                  Separate bounded context
-│           └── repository/           LoyaltyRepository
-│
-├── src/test/java/…/                  Hand-authored ArchUnit fitness functions
-│
-└── architecture-skill-demo/          AI governance agents
-    ├── structural_fitness_agent.py   Generates ArchUnit tests from ADRs + specs
-    ├── api_fitness_agent.py          Scans code → OpenAPI spec → Spectral lint
-    ├── run_tests.py                  Unified orchestrator + HTML dashboard
-    ├── inputs/
-    │   ├── adrs/                     Architecture Decision Records
-    │   ├── specs/                    Architecture standards, API style guide
-    │   └── spectral-ruleset.yaml     Generated Spectral ruleset (committed)
-    └── skills/                       AI skill definitions (prompting documents)
-```
+The AI is not making architectural decisions. It is translating decisions that humans
+have already made into code that machines can check.
 
 ---
 
-## Violations Baked Into This Code
-
-### Structural violations (ArchUnit catches these)
-
-| # | Where | What | Rule broken |
-|---|-------|------|-------------|
-| 1 | `OrderController` | Injects and calls `OrderRepository` directly | ADR-003: Controller must not access repository layer |
-| 2 | `OrderService` | Imports concrete `PaymentGatewayClient` | ADR-003: Application layer must not depend on infrastructure implementations |
-| 3 | `OrderService` | Imports `LoyaltyRepository` from another context | ADR-001: Bounded contexts must not share repositories |
-| 4 | `PaymentGatewayClient` | Uses `RestTemplate` instead of `WebClient` | ADR-017: RestTemplate is banned — bypasses platform circuit breakers and tracing |
-
-### API violations (Spectral catches these)
-
-| # | Where | What | Style guide rule |
-|---|-------|------|-----------------|
-| 4 | `@RequestMapping("/orders")` | No version prefix | §1: paths must start with `/v{n}/` |
-| 5 | `@PostMapping` | No `@ResponseStatus(CREATED)` | §4: POST must return 201 |
-| 6 | Returns `Order` domain object | No response DTO | §6: internal types must not leak into contracts |
-| 7 | `getOrder()` | No error response schema | §5: 4xx responses need `{code, message, correlationId}` |
-
----
-
-## Prerequisites
-
-**For the hand-authored ArchUnit tests:**
-```bash
-java -version    # 17+
-mvn -version     # 3.8+
-```
-
-**For the AI agents (architecture-skill-demo/):**
-```bash
-python3 --version    # 3.11+
-node --version       # 18+ (for spectral)
-npm install -g @stoplight/spectral-cli
-pip3 install anthropic python-dotenv openapi-spec-validator pyyaml
-```
-
-**Azure AI Foundry access** — copy `architecture-skill-demo/.env.example` to
-`architecture-skill-demo/.env` and fill in your endpoint and API key.
-
----
-
-## Demo Flow
-
-### Hand-authored tests only
-
-```bash
-mvn test
-```
-
-Expected: `BUILD FAILURE` — the intentional violations are caught immediately.
-
-### Full AI governance demo
-
-**Step 1 — Pre-run (do this before the demo, takes a few minutes):**
-
-```bash
-cd architecture-skill-demo
-python3 run_tests.py
-```
-
-This runs both AI agents and opens the unified HTML report.
-
-**Step 2 — Subsequent runs are instant (cache hits):**
-
-```bash
-python3 run_tests.py
-```
-
-- Structural tests: skip AI generation (governance docs unchanged) → run `mvn test` → fresh results
-- API agent: re-scans code, re-generates OpenAPI spec, lints against cached ruleset
-
-**Caching model:**
-
-| Artifact | Regenerated when |
-|----------|-----------------|
-| `generated-tests/…Test.java` | ADRs or architecture specs change |
-| `inputs/spectral-ruleset.yaml` | API style guide changes |
-| `generated-specs/openapi.yaml` | Always (reflects current code) |
-
-To force regeneration: `--refresh-tests` or `--refresh-ruleset` flags on the individual agents.
-
-### Run a single agent
-
-```bash
-python3 run_tests.py --structural   # structural agent + mvn test
-python3 run_tests.py --api          # API agent only
-python3 run_tests.py --no-run       # regenerate report from existing artifacts
-```
-
----
-
-## The Two AI Agents
+## Two Agents
 
 ### Structural Fitness Agent
 
-Generates ArchUnit tests from governance documents — not from the code.
+Reads your Java codebase and your enterprise architecture docs (ADRs, standards) and
+generates **ArchUnit fitness functions** — Java tests that enforce structural rules like
+layering, bounded-context boundaries, banned libraries, and async communication patterns.
 
-```
-Codebase scan  ──────────────────────────────────────────► outputs/  (human review only)
-
-ADRs + Architecture Specs
-         │
-         ▼  only when governance docs change
-  Test Generation
-    archunit-generator skill → GeneratedFitnessFunctionsTest.java
-    mvn test-compile → if errors, send back to model → retry (up to 3×)
-    → generated-tests/  (compiled into the Maven project)
-         │
-         ▼  always
-  mvn test → Surefire XML → HTML report
-```
-
-The codebase scan runs every time and is saved to `outputs/` for human review,
-but it does **not** feed test generation. Rules come from ADRs.
-A rule is correct because an architect decided it, not because the scanner found a violation.
+The tests are regenerated only when governance documents change. They compile-verify
+before being committed.
 
 ### API & Integration Fitness Agent
 
-Scans the actual codebase and validates it against the platform API style guide.
+Reads your service source code and your API style guide and produces two artefacts:
+
+- **OpenAPI spec** — generated from what the code actually exposes, not what was intended
+- **Spectral ruleset** — Spectral rules derived from the style guide
+
+It then lints the spec against the ruleset, capturing all violations as a JUnit report.
+The ruleset is verified to be executable (via a probe spec) before being committed.
+
+---
+
+## Repository Layout
 
 ```
-Source code
+architecture-governance-with-ai/
+│
+├── agents/                          ← the AI governance agents
+│   ├── structural_fitness_agent.py
+│   └── api_fitness_agent.py
+│
+├── skills/                          ← AI skill prompts used by the agents
+│   ├── codebase-scanner.md          ← scans Java source for architecture patterns
+│   ├── archunit-generator.md        ← generates ArchUnit test class from scan + ADRs
+│   ├── api-scanner.md               ← scans source for REST API surface
+│   ├── openapi-generator.md         ← generates OpenAPI 3.1 spec from API scan
+│   └── spectral-ruleset-generator.md← generates Spectral ruleset from API style guide
+│
+├── scripts/                         ← operational scripts
+│   ├── run_tests.py                 ← runs both agents and opens the governance report
+│   ├── run_skill.py                 ← runs the two-skill structural pipeline directly
+│   └── reset-demo.sh               ← wipes all generated artefacts for a clean run
+│
+├── docs/
+│   └── agent-flows.html            ← visual walkthrough of both agent flows
+│
+└── example-company/                 ← a sample enterprise using the framework
     │
-    ▼  API Scan
-       api-scanner skill → endpoint inventory
+    ├── architecture/                ← company-wide EA artefacts (inputs to the agents)
+    │   ├── adrs/                    ← Architecture Decision Records
+    │   ├── specs/                   ← API style guide and other technical standards
+    │   └── architecture-standards.md
     │
-    ▼  Spec Generation
-       openapi-generator skill → openapi.yaml
-       openapi-spec-validator → if invalid, send back to model → retry (up to 3×)
-       → generated-specs/openapi.yaml  (always regenerated)
-    │
-    ▼  Ruleset Generation  (skipped if style guide SHA unchanged)
-       spectral-ruleset-generator skill → candidate ruleset
-       spectral lint <probe spec> → if Spectral error, send back → retry (up to 3×)
-       → inputs/spectral-ruleset.yaml  (committed governance artifact)
-    │
-    ▼  Lint  (read-only — never modifies the ruleset)
-       spectral lint openapi.yaml vs inputs/spectral-ruleset.yaml
-       → generated-specs/spectral-junit.xml → HTML report
+    └── projects/
+        └── order-service/           ← a Java microservice being governed
+            ├── service-description.md
+            ├── src/                 ← Java source (contains intentional violations)
+            └── pom.xml
+```
+
+The framework (`agents/`, `skills/`) is separate from the example company's governance
+documents and projects. To use this with your own organisation, replace
+`example-company/` with your own governance artefacts and point the agents at your
+codebase.
+
+---
+
+## What Gets Generated
+
+Everything under `example-company/projects/*/generated-*` and
+`example-company/architecture/spectral-ruleset.yaml` is **generated by the agents and
+gitignored**. A fresh clone contains only source code and governance documents.
+Running the agents produces all the rest.
+
+| Generated artefact | Agent | Where |
+|--------------------|-------|-------|
+| `generated-tests/…GeneratedFitnessFunctionsTest.java` | Structural | `projects/order-service/` |
+| `generated-specs/openapi.yaml` | API | `projects/order-service/` |
+| `generated-specs/spectral-junit.xml` | API | `projects/order-service/` |
+| `architecture/spectral-ruleset.yaml` | API | `example-company/` |
+
+---
+
+## Quick Start
+
+**Prerequisites:**
+
+```bash
+pip install anthropic python-dotenv openapi-spec-validator pyyaml
+npm install -g @stoplight/spectral-cli
+```
+
+Copy `.env.example` to `.env` and fill in your Azure AI Foundry credentials:
+
+```bash
+cp .env.example .env
+```
+
+**Run both agents and open the governance report:**
+
+```bash
+python3 scripts/run_tests.py
+```
+
+Or run each agent individually:
+
+```bash
+python3 agents/structural_fitness_agent.py   # generates ArchUnit tests, compile-verifies
+python3 agents/api_fitness_agent.py          # generates OpenAPI spec + Spectral ruleset
+```
+
+**Reset to a clean state before a demo:**
+
+```bash
+bash scripts/reset-demo.sh
 ```
 
 ---
 
-## The Unified HTML Dashboard
+## Extending to Your Organisation
 
-`run_tests.py` produces a single governance report with three sections:
-
-| Section | Icon | Source |
-|---------|------|--------|
-| Hand-authored Fitness Functions | ✍ | Surefire XML (ArchitectureFitnessFunctionsTest) |
-| AI-generated Fitness Functions | ✦ | Surefire XML (GeneratedFitnessFunctionsTest) |
-| AI-generated API Fitness Functions | ⬡ | Spectral JUnit XML |
-
-Each section shows ✓ passing and ✗ failing rules. Failing rules expand to show violation details.
-
----
-
-## Why This Matters at Enterprise Scale
-
-A large enterprise operates dozens of bounded domains — each with its own teams,
-and each team with engineers who may never have read the architecture wiki.
-
-Traditional governance relies on Architecture Review Boards (slow), wiki pages (stale), and
-code reviews (partial coverage under release pressure). The result: architectural drift is
-invisible until it causes an outage, a failed audit, or a replatforming project that takes
-three times longer than planned.
-
-### The EA Altitude
-
-The fitness functions in this demo operate at two levels:
-
-| Level | Governed by | Concerns |
-|-------|-------------|---------|
-| **Code design** | Tech lead | Class layering, dependency inversion, package structure within a service |
-| **Enterprise Architecture** | EA team | Bounded context boundaries, cross-domain coupling, API contract standards, platform-wide technology standards |
-
-The EA question is not "does this controller call a repository?" — it is:
-
-> "Does the Loyalty domain import classes from the Order domain? Is the Order service calling
-> the Loyalty service synchronously in the checkout path, creating a cascading failure risk?
-> Are delivery partner SDKs leaking into domain logic? Does every service follow the API
-> versioning standard so consumer contracts are stable?"
-
-Those are the questions the AI agents are designed to surface automatically across every
-service on the platform — without an architect reading every file.
-
-### From Governance Decision to Running Test
+The `example-company/` directory is a template. Replace it with your own:
 
 ```
-Architect writes ADR
-        │
-        ▼
-AI agent reads ADR → generates ArchUnit rule
-        │
-        ▼
-Rule committed to repo, runs in CI on every PR
-        │
-        ▼
-Violation breaks the build before it merges, before it spreads
-        │
-        ▼
-ADR updated → agent re-generates → new rule replaces old one
+your-company/
+├── architecture/
+│   ├── adrs/               ← your Architecture Decision Records
+│   ├── specs/              ← your API style guide, event schemas, etc.
+│   └── architecture-standards.md
+│
+└── projects/
+    └── your-service/
+        ├── service-description.md
+        └── src/
 ```
 
-The tests regenerate when the governance decisions change — not when the code changes.
-Code changes run against the existing tests. This is the correct relationship between
-governance and implementation.
+The agents discover their inputs via the `GOVERNANCE_DIR` and `PROJECT_DIR` constants
+in `agents/structural_fitness_agent.py` and `agents/api_fitness_agent.py`. Update those
+constants (or add CLI args) to point at your directories.
 
----
-
-## CI/CD Integration
-
-```yaml
-# GitHub Actions — hand-authored tests
-- name: Architecture fitness functions
-  run: mvn test -Dtest=ArchitectureFitnessFunctionsTest
-
-# GitHub Actions — full governance suite (AI artifacts pre-generated)
-- name: Full governance suite
-  run: cd architecture-skill-demo && python3 run_tests.py --no-run
-  # Note: run_tests.py --no-run reads existing artifacts; agents run separately
-  # on ADR/spec changes via a dedicated workflow trigger
-```
-
-Because ArchUnit runs against compiled bytecode — not source text — it catches violations
-regardless of how the dependency was introduced: direct import, reflection, framework
-injection, or indirect transitive coupling.
+The same framework can govern multiple tech stacks — add a Node.js or Go project under
+`projects/` and point the API agent at it. The structural agent currently targets Java
+(ArchUnit); extending it to other languages means swapping the generator skill and the
+compile-verification step.

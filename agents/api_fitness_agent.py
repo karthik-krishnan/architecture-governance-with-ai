@@ -54,16 +54,19 @@ except ImportError:
 # Constants
 # ---------------------------------------------------------------------------
 
-SKILL_DIR     = pathlib.Path(__file__).parent
-INPUTS_DIR    = SKILL_DIR / "inputs"
-SKILLS_DIR    = SKILL_DIR / "skills"
-MAVEN_ROOT    = SKILL_DIR.parent
-GENERATED_DIR = MAVEN_ROOT / "generated-specs"
+AGENTS_DIR    = pathlib.Path(__file__).parent
+REPO_ROOT     = AGENTS_DIR.parent
+SKILLS_DIR    = REPO_ROOT / "skills"
+
+GOVERNANCE_DIR = REPO_ROOT / "example-company" / "architecture"
+PROJECT_DIR    = REPO_ROOT / "example-company" / "projects" / "order-service"
+
+GENERATED_DIR = PROJECT_DIR / "generated-specs"
 OPENAPI_FILE  = GENERATED_DIR / "openapi.yaml"
-RULESET_FILE  = INPUTS_DIR / "spectral-ruleset.yaml"   # committed; auto-regenerates when style guide changes
+RULESET_FILE  = GOVERNANCE_DIR / "spectral-ruleset.yaml"
 JUNIT_FILE    = GENERATED_DIR / "spectral-junit.xml"
 
-STYLE_GUIDE_PATH = INPUTS_DIR / "specs" / "api-style-guide.md"
+STYLE_GUIDE_PATH = GOVERNANCE_DIR / "specs" / "api-style-guide.md"
 SHA_PREFIX       = "# style-guide-sha256: "
 
 MAX_LINT_ITERATIONS = 3
@@ -163,7 +166,7 @@ def read_file(path: pathlib.Path) -> str:
 
 
 def collect_adrs() -> str:
-    adrs = sorted((INPUTS_DIR / "adrs").glob("*.md"))
+    adrs = sorted((GOVERNANCE_DIR / "adrs").glob("*.md"))
     if not adrs:
         return "(no ADRs found)"
     return "\n\n---\n\n".join(f"### {f.name}\n\n{read_file(f)}" for f in adrs)
@@ -289,7 +292,7 @@ def run_scanner(client: AnthropicFoundry, source_files: list[pathlib.Path],
                 source_root: pathlib.Path, model: str) -> str:
 
     scanner_skill  = read_file(SKILLS_DIR / "api-scanner.md")
-    service_desc   = read_file(INPUTS_DIR / "service-description.md")
+    service_desc   = read_file(PROJECT_DIR / "service-description.md")
     source_context = build_source_context(source_files, source_root)
 
     system = (
@@ -328,7 +331,7 @@ def run_scanner(client: AnthropicFoundry, source_files: list[pathlib.Path],
 def run_spec_generator(client: AnthropicFoundry, scan_output: str, model: str) -> str:
 
     generator_skill = read_file(SKILLS_DIR / "openapi-generator.md")
-    service_desc    = read_file(INPUTS_DIR / "service-description.md")
+    service_desc    = read_file(PROJECT_DIR / "service-description.md")
     adrs            = collect_adrs()
 
     system = (
@@ -542,7 +545,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="API & Integration Fitness Agent")
     parser.add_argument(
         "--codebase", type=pathlib.Path,
-        default=SKILL_DIR.parent / "src",
+        default=PROJECT_DIR / "src",
         help="Path to source root (default: ../src)",
     )
     parser.add_argument(
@@ -555,7 +558,7 @@ def main() -> None:
     if not codebase_path.exists():
         sys.exit(f"Codebase path not found: {codebase_path}")
 
-    load_dotenv(SKILL_DIR / ".env")
+    load_dotenv(REPO_ROOT / ".env")
 
     global MAX_LINT_ITERATIONS
     MAX_LINT_ITERATIONS = int(os.environ.get("MAX_LINT_ITERATIONS", "3"))
@@ -577,10 +580,10 @@ def main() -> None:
         )
 
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    out_dir   = SKILL_DIR / "outputs" / f"api-{timestamp}"
+    out_dir   = REPO_ROOT / "outputs" / f"api-{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-    INPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    GOVERNANCE_DIR.mkdir(parents=True, exist_ok=True)
 
     source_files = collect_source_files(codebase_path)
 
@@ -622,7 +625,7 @@ def main() -> None:
         print(f"{'─' * 70}")
         ruleset_yaml = run_ruleset_generator(client, model, spectral_cmd)
         RULESET_FILE.write_text(ruleset_yaml, encoding="utf-8")
-        print(f"  Ruleset saved : {RULESET_FILE.relative_to(SKILL_DIR)}")
+        print(f"  Ruleset saved : {RULESET_FILE.relative_to(REPO_ROOT)}")
     else:
         print(f"\n{'─' * 70}")
         print(f"  Ruleset Generation  (style guide unchanged — committed ruleset is current)")
