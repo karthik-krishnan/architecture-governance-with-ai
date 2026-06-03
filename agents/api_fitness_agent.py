@@ -545,8 +545,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="API & Integration Fitness Agent")
     parser.add_argument(
         "--codebase", type=pathlib.Path,
-        default=PROJECT_DIR / "src",
-        help="Path to source root (default: ../src)",
+        help="Path to source root (default: <project-dir>/src)",
+    )
+    parser.add_argument(
+        "--governance-dir",
+        type=pathlib.Path,
+        default=GOVERNANCE_DIR,
+        help="Path to EA governance directory containing standards/ and the Spectral ruleset "
+             "(default: example-company/architecture)",
+    )
+    parser.add_argument(
+        "--project-dir",
+        type=pathlib.Path,
+        default=PROJECT_DIR,
+        help="Path to the service project root whose src/ will be scanned "
+             "(default: example-company/projects/order-service)",
     )
     parser.add_argument(
         "--refresh-ruleset", action="store_true",
@@ -554,7 +567,19 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    codebase_path = args.codebase.resolve()
+    # Allow --governance-dir and --project-dir to override module-level constants
+    # so all downstream functions pick up the correct paths without requiring
+    # them to be threaded through every call.
+    global GOVERNANCE_DIR, PROJECT_DIR, GENERATED_DIR, OPENAPI_FILE, RULESET_FILE, JUNIT_FILE, STYLE_GUIDE_PATH
+    GOVERNANCE_DIR   = args.governance_dir.resolve()
+    PROJECT_DIR      = args.project_dir.resolve()
+    GENERATED_DIR    = PROJECT_DIR / "generated-specs"
+    OPENAPI_FILE     = GENERATED_DIR / "openapi.yaml"
+    RULESET_FILE     = GOVERNANCE_DIR / "spectral-ruleset.yaml"
+    JUNIT_FILE       = GENERATED_DIR / "spectral-junit.xml"
+    STYLE_GUIDE_PATH = GOVERNANCE_DIR / "standards" / "api-style-guide.md"
+
+    codebase_path = (args.codebase or PROJECT_DIR / "src").resolve()
     if not codebase_path.exists():
         sys.exit(f"Codebase path not found: {codebase_path}")
 

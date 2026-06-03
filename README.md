@@ -163,9 +163,28 @@ your-company/
         └── src/
 ```
 
-The agents discover their inputs via the `GOVERNANCE_DIR` and `PROJECT_DIR` constants
-in `agents/structural_fitness_agent.py` and `agents/api_fitness_agent.py`. Update those
-constants (or add CLI args) to point at your directories.
+Both agents and the dashboard accept `--governance-dir` and `--project-dir` flags,
+so you can point them at any company folder without touching the source:
+
+```bash
+# Run both agents against a different company
+python3 scripts/run_tests.py \
+  --governance-dir acme-corp/architecture \
+  --project-dir    acme-corp/projects/payments-service
+
+# Or run each agent individually
+python3 agents/structural_fitness_agent.py \
+  --governance-dir acme-corp/architecture \
+  --project-dir    acme-corp/projects/payments-service
+
+python3 agents/api_fitness_agent.py \
+  --governance-dir acme-corp/architecture \
+  --project-dir    acme-corp/projects/payments-service
+```
+
+Generated artifacts (`generated-tests/`, `generated-specs/`, `spectral-ruleset.yaml`)
+always land inside the directory you specify — keeping each company's outputs isolated.
+The `.gitignore` uses `**/` wildcards so any folder structure is covered automatically.
 
 The same framework can govern multiple tech stacks — add a Node.js or Go project under
 `projects/` and point the API agent at it. The structural agent currently targets Java

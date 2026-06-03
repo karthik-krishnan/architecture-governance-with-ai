@@ -50,27 +50,37 @@ CLASS_LABELS = {
 # Run agents / tests
 # ---------------------------------------------------------------------------
 
-def run_structural() -> None:
+def run_structural(governance_dir: pathlib.Path, project_dir: pathlib.Path) -> None:
     print("\nRunning Structural Fitness Agent...")
     subprocess.run(
-        [sys.executable, str(REPO_ROOT / "agents" / "structural_fitness_agent.py")],
+        [
+            sys.executable,
+            str(REPO_ROOT / "agents" / "structural_fitness_agent.py"),
+            "--governance-dir", str(governance_dir),
+            "--project-dir",    str(project_dir),
+        ],
         cwd=REPO_ROOT / "agents",
     )
 
 
-def run_api() -> None:
+def run_api(governance_dir: pathlib.Path, project_dir: pathlib.Path) -> None:
     print("\nRunning API & Integration Fitness Agent...")
     subprocess.run(
-        [sys.executable, str(REPO_ROOT / "agents" / "api_fitness_agent.py")],
+        [
+            sys.executable,
+            str(REPO_ROOT / "agents" / "api_fitness_agent.py"),
+            "--governance-dir", str(governance_dir),
+            "--project-dir",    str(project_dir),
+        ],
         cwd=REPO_ROOT / "agents",
     )
 
 
-def run_mvn_tests() -> None:
+def run_mvn_tests(project_dir: pathlib.Path) -> None:
     print("Running ArchUnit tests...", end="", flush=True)
     result = subprocess.run(
         ["mvn", "test", "-Dmaven.test.failure.ignore=true", "--batch-mode", "-q"],
-        cwd=PROJECT_DIR,
+        cwd=project_dir,
         capture_output=True,
     )
     if result.returncode not in (0, 1):
@@ -603,25 +613,47 @@ def main() -> None:
                         help="Run API fitness agent only")
     parser.add_argument("--no-run",     action="store_true",
                         help="Skip agents — regenerate report from last artifacts")
+    parser.add_argument(
+        "--governance-dir",
+        type=pathlib.Path,
+        default=GOVERNANCE_DIR,
+        help="Path to EA governance directory containing adrs/ and standards/ "
+             "(default: example-company/architecture)",
+    )
+    parser.add_argument(
+        "--project-dir",
+        type=pathlib.Path,
+        default=PROJECT_DIR,
+        help="Path to the Maven project root to scan and test "
+             "(default: example-company/projects/order-service)",
+    )
     args = parser.parse_args()
+
+    # Resolve the directories that vary by company/project
+    governance_dir  = args.governance_dir.resolve()
+    project_dir     = args.project_dir.resolve()
+    reports_dir     = project_dir / "target" / "surefire-reports"
+    generated_specs = project_dir / "generated-specs"
+    ruleset_file    = governance_dir / "spectral-ruleset.yaml"
+    junit_file      = generated_specs / "spectral-junit.xml"
 
     if not args.no_run:
         run_both = not args.structural and not args.api
         if run_both or args.structural:
-            run_structural()
-            run_mvn_tests()
+            run_structural(governance_dir, project_dir)
+            run_mvn_tests(project_dir)
         if run_both or args.api:
-            run_api()
+            run_api(governance_dir, project_dir)
 
     # Collect reports
     reports = []
 
-    if REPORTS_DIR.exists():
-        for xml_file in sorted(REPORTS_DIR.glob("TEST-*.xml")):
+    if reports_dir.exists():
+        for xml_file in sorted(reports_dir.glob("TEST-*.xml")):
             reports.append(load_surefire_report(xml_file))
 
-    if JUNIT_FILE.exists():
-        reports.append(load_spectral_report(JUNIT_FILE))
+    if junit_file.exists():
+        reports.append(load_spectral_report(junit_file))
 
     if not reports:
         sys.exit(

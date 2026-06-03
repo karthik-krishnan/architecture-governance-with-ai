@@ -340,8 +340,21 @@ def main() -> None:
     parser.add_argument(
         "--codebase",
         type=pathlib.Path,
-        default=PROJECT_DIR / "src",
-        help="Path to Java source root (default: ../src)",
+        help="Path to Java source root (default: <project-dir>/src)",
+    )
+    parser.add_argument(
+        "--governance-dir",
+        type=pathlib.Path,
+        default=GOVERNANCE_DIR,
+        help="Path to EA governance directory containing adrs/ and standards/ "
+             "(default: example-company/architecture)",
+    )
+    parser.add_argument(
+        "--project-dir",
+        type=pathlib.Path,
+        default=PROJECT_DIR,
+        help="Path to the Maven project root whose src/ will be scanned "
+             "(default: example-company/projects/order-service)",
     )
     parser.add_argument(
         "--refresh-tests", action="store_true",
@@ -349,7 +362,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    codebase_path = args.codebase.resolve()
+    # Allow --governance-dir and --project-dir to override module-level constants
+    # so all downstream functions (collect_adrs, compile_check, etc.) pick up the
+    # correct paths without needing them threaded through every call.
+    global GOVERNANCE_DIR, PROJECT_DIR, MAVEN_ROOT, GENERATED_DIR
+    GOVERNANCE_DIR = args.governance_dir.resolve()
+    PROJECT_DIR    = args.project_dir.resolve()
+    MAVEN_ROOT     = PROJECT_DIR
+    GENERATED_DIR  = PROJECT_DIR / "generated-tests" / "com" / "example" / "governance"
+
+    codebase_path = (args.codebase or PROJECT_DIR / "src").resolve()
     if not codebase_path.exists():
         sys.exit(f"Codebase path not found: {codebase_path}")
 
@@ -375,7 +397,7 @@ def main() -> None:
     print(f"  Provider  : Azure AI Foundry")
     print(f"  Model     : {model}")
     print(f"  Codebase  : {codebase_path}  ({len(java_files)} files)")
-    print(f"  ADRs      : {len(list((INPUTS_DIR / 'adrs').glob('*.md')))}")
+    print(f"  ADRs      : {len(list((GOVERNANCE_DIR / 'adrs').glob('*.md')))}")
     print(f"  Standards : {len(list((GOVERNANCE_DIR / 'standards').rglob('*.*')))}")
     print(f"  Max verify attempts : {MAX_COMPILE_ITERATIONS}")
     tests_status = "regenerate" if args.refresh_tests else ("governance changed — will regenerate" if stale else "current")
