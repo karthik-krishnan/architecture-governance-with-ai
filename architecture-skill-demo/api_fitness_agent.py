@@ -365,126 +365,40 @@ def run_ruleset_generator(client: AnthropicFoundry, model: str) -> str:
 # Phase 4 — Verify: spectral lint loop
 # ---------------------------------------------------------------------------
 
-def run_verify_loop(client: AnthropicFoundry, spec_yaml: str,
-                    ruleset_yaml: str, style_guide_sha: str,
-                    model: str) -> tuple[str, str]:
+def run_spectral_lint_phase(spec_yaml: str) -> None:
     """
-    Run Spectral lint and, if the ruleset has a RUNTIME ERROR (exit ≥ 2), ask
-    the model to fix the ruleset YAML syntax and retry.
+    Phase 4 — lint the generated OpenAPI spec against the committed ruleset.
 
-    Violations (exit code 1) are the expected, desired outcome for a governance
-    demo — they are NOT errors.  The correction loop must never run because of
-    violations, because the model would "fix" them by weakening the governance
-    rules, corrupting the committed ruleset.
-
-    The committed ruleset (inputs/spectral-ruleset.yaml) is only written by Phase 3
-    (generation) or by this loop when fixing a genuine Spectral runtime error.
+    The ruleset (inputs/spectral-ruleset.yaml) is a committed governance artifact.
+    This phase is read-only with respect to the ruleset — it never modifies it.
+    If Spectral reports violations, that is the expected, desired result for a
+    governance demo.  The JUnit is saved and the HTML report shows the failures.
     """
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-    INPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    correction_messages: list[dict] = []
 
-    for attempt in range(1, MAX_LINT_ITERATIONS + 1):
+    print(f"\n{'─' * 70}")
+    print(f"  PHASE 4 — Spectral Lint")
+    print(f"{'─' * 70}")
 
-        print(f"\n{'─' * 70}")
-        print(f"  PHASE 4 — Spectral Lint  (attempt {attempt}/{MAX_LINT_ITERATIONS})")
-        print(f"{'─' * 70}")
-
-        OPENAPI_FILE.write_text(spec_yaml, encoding="utf-8")
-        RULESET_FILE.write_text(ruleset_yaml, encoding="utf-8")
-
-        rc, spectral_error, junit_xml = spectral_lint(OPENAPI_FILE, RULESET_FILE)
-
-        # Always save the JUnit whenever Spectral ran (exit 0 or 1).
-        if rc in (0, 1) and junit_xml:
-            JUNIT_FILE.write_text(junit_xml, encoding="utf-8")
-
-        if rc == 0:
-            print("  ✓  Spectral lint ran — spec is fully compliant (no violations)\n")
-            return spec_yaml, ruleset_yaml
-
-        if rc == 1:
-            # Violations found — this is exactly what we want for a governance demo.
-            # Do NOT enter the correction loop; the JUnit with violations is the result.
-            print("  ✓  Spectral lint ran — violations captured (governance report ready)\n")
-            return spec_yaml, ruleset_yaml
-
-        # rc >= 2: Spectral itself failed to run the ruleset (invalid YAML, unknown
-        # function, bad JSONPath, etc.).  The ruleset needs a syntax fix, not a
-        # weakening of its governance rules.
-        print("  ✗  Spectral runtime error — ruleset YAML is invalid:\n")
-        for line in spectral_error.splitlines()[:20]:
-            print(f"     {line}")
-        print()
-
-        if attempt >= MAX_LINT_ITERATIONS:
-            break
-
-        print("  →  Asking agent to fix ruleset syntax (not governance rules)...\n")
-
-        prompt = (
-            "The Spectral ruleset has a syntax or configuration error that prevents "
-            "Spectral from running it at all.  Fix the YAML syntax, invalid function "
-            "names, or bad JSONPath expressions in the RULESET ONLY.\n\n"
-            "Do NOT change the governance intent of any rule — do not remove rules, "
-            "do not weaken severity levels, do not alter the logic a rule enforces.\n\n"
-            "Return both artifacts in this EXACT format with no other text:\n"
-            "=== OPENAPI SPEC ===\n"
-            "[openapi yaml — unchanged unless it caused the Spectral error]\n"
-            "=== SPECTRAL RULESET ===\n"
-            "[corrected spectral yaml — syntax fixed, governance rules unchanged]\n\n"
-            f"CURRENT OPENAPI SPEC:\n{spec_yaml}\n\n"
-            f"CURRENT SPECTRAL RULESET:\n{ruleset_yaml}\n\n"
-            f"SPECTRAL ERROR:\n{spectral_error}"
-        )
-
-        if not correction_messages:
-            correction_messages = [{"role": "user", "content": prompt}]
-        else:
-            correction_messages.append({"role": "user", "content": (
-                "Still failing. Fix remaining syntax errors in the ruleset only. "
-                "Return both artifacts in the same format.\n\n"
-                f"SPECTRAL ERROR:\n{spectral_error}"
-            )})
-
-        collected: list[str] = []
-        with client.messages.stream(
-            model=model, max_tokens=16000,
-            system=(
-                "You are a senior platform architect. Fix the Spectral ruleset YAML "
-                "syntax as instructed. Never weaken governance rules. "
-                "Return only the two delimited YAML blocks."
-            ),
-            messages=correction_messages,
-        ) as stream:
-            for text in stream.text_stream:
-                print(text, end="", flush=True)
-                collected.append(text)
-        print()
-
-        raw = "".join(collected)
-        correction_messages.append({"role": "assistant", "content": raw})
-
-        spec_match    = re.search(r"=== OPENAPI SPEC ===\n(.*?)(?===|$)", raw, re.DOTALL)
-        ruleset_match = re.search(r"=== SPECTRAL RULESET ===\n(.*?)$", raw, re.DOTALL)
-
-        if spec_match:
-            spec_yaml = strip_yaml_fences(spec_match.group(1).strip())
-        if ruleset_match:
-            # Re-embed the SHA comment so the model can't accidentally lose it
-            corrected = strip_yaml_fences(ruleset_match.group(1).strip())
-            ruleset_yaml = ensure_sha_comment(corrected, style_guide_sha)
-
-    # Exhausted attempts — save whatever we have so the HTML report can render
     OPENAPI_FILE.write_text(spec_yaml, encoding="utf-8")
-    RULESET_FILE.write_text(ruleset_yaml, encoding="utf-8")
-    _, _, junit_xml = spectral_lint(OPENAPI_FILE, RULESET_FILE)
+
+    rc, spectral_error, junit_xml = spectral_lint(OPENAPI_FILE, RULESET_FILE)
+
     if junit_xml:
         JUNIT_FILE.write_text(junit_xml, encoding="utf-8")
 
-    print(f"  ⚠  Could not fix Spectral runtime error after {MAX_LINT_ITERATIONS} attempts.")
-    print("  Last versions written — check errors above.\n")
-    return spec_yaml, ruleset_yaml
+    if rc == 0:
+        print("  ✓  No violations — spec is fully compliant\n")
+    elif rc == 1:
+        print("  ✓  Spectral lint ran — violations captured (governance report ready)\n")
+    else:
+        # Spectral itself failed (invalid ruleset YAML, unknown function, bad JSONPath).
+        # The ruleset must be fixed in Phase 3 (generation), not here.
+        print("  ✗  Spectral runtime error — the committed ruleset may be invalid:\n")
+        for line in spectral_error.splitlines()[:20]:
+            print(f"     {line}")
+        print()
+        print("  ⚠  Re-generate the ruleset with: python3 api_fitness_agent.py --refresh-ruleset\n")
 
 
 # ---------------------------------------------------------------------------
@@ -546,7 +460,6 @@ def main() -> None:
     print(f"  Provider  : Azure AI Foundry")
     print(f"  Model     : {model}")
     print(f"  Codebase  : {codebase_path}  ({len(source_files)} files)")
-    print(f"  Max verify attempts : {MAX_LINT_ITERATIONS}")
     ruleset_status = "regenerate" if args.refresh_ruleset else ("stale — will regenerate" if stale else "up-to-date")
     print(f"  Ruleset   : {ruleset_status}")
     print("=" * 70)
@@ -571,24 +484,21 @@ def main() -> None:
     # Phase 3: Generate ruleset (skipped when style guide is unchanged)
     if stale:
         ruleset_yaml = run_ruleset_generator(client, model)
+        RULESET_FILE.write_text(ruleset_yaml, encoding="utf-8")
+        print(f"  Ruleset saved : {RULESET_FILE.relative_to(SKILL_DIR)}")
+
     else:
         print(f"\n{'─' * 70}")
         print(f"  PHASE 3 — Spectral Ruleset  (skipped — style guide unchanged)")
         print(f"{'─' * 70}")
-        ruleset_yaml = read_file(RULESET_FILE)
 
-    # Phase 4: Verify (may correct ruleset; SHA comment preserved inside loop)
-    style_guide_sha = compute_sha256(STYLE_GUIDE_PATH)
-    spec_yaml, ruleset_yaml = run_verify_loop(
-        client, spec_yaml, ruleset_yaml, style_guide_sha, model
-    )
+    # Phase 4: Spectral lint — read-only against the committed ruleset
+    run_spectral_lint_phase(spec_yaml)
 
-    # Save reference copies in outputs/
+    # Save reference copy of the spec in outputs/
     (out_dir / "openapi.yaml").write_text(spec_yaml, encoding="utf-8")
-    (out_dir / "spectral-ruleset.yaml").write_text(ruleset_yaml, encoding="utf-8")
 
-    print(f"  Spec saved    : {out_dir.name}/openapi.yaml")
-    print(f"  Ruleset saved : {RULESET_FILE.relative_to(SKILL_DIR)}")
+    print(f"  Spec saved : {out_dir.name}/openapi.yaml")
 
     print(f"\n{'=' * 70}")
     print(f"  Agent complete.")
