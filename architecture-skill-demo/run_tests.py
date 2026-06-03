@@ -153,8 +153,32 @@ def load_spectral_report(xml_path: pathlib.Path) -> dict:
 
     Spectral emits one <testcase> per violation. We group by rule ID (testcase
     name) so each rule appears once with all its violation locations.
+
+    Spectral sometimes emits non-XML text (warnings, notices) before or after
+    the XML document. We extract just the XML portion before parsing.
     """
-    root = ET.parse(xml_path).getroot()
+    content = xml_path.read_text(encoding="utf-8")
+
+    # Find the start of the XML document
+    xml_start = content.find("<?xml")
+    if xml_start == -1:
+        xml_start = content.find("<testsuites")
+    if xml_start == -1:
+        xml_start = content.find("<testsuite")
+    if xml_start > 0:
+        content = content[xml_start:]
+
+    # Truncate at the end of the outermost closing tag
+    for closing in ("</testsuites>", "</testsuite>"):
+        idx = content.rfind(closing)
+        if idx != -1:
+            content = content[:idx + len(closing)]
+            break
+
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError:
+        return {"suite": "spectral", "total": 0, "passed": 0, "failed": 0, "rules": []}
 
     suite_el = root if root.tag == "testsuite" else root.find("testsuite")
     if suite_el is None:
