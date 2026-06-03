@@ -385,6 +385,8 @@ def run_generator_agent(client: AnthropicFoundry, model: str) -> str:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    global GOVERNANCE_DIR, PROJECT_DIR, MAVEN_ROOT, GENERATED_DIR, MAX_COMPILE_ITERATIONS
+
     parser = argparse.ArgumentParser(description="Structural Fitness Agent")
     parser.add_argument(
         "--codebase",
@@ -414,7 +416,6 @@ def main() -> None:
     # Allow --governance-dir and --project-dir to override module-level constants
     # so all downstream functions (collect_adrs, compile_check, etc.) pick up the
     # correct paths without needing them threaded through every call.
-    global GOVERNANCE_DIR, PROJECT_DIR, MAVEN_ROOT, GENERATED_DIR
     GOVERNANCE_DIR = args.governance_dir.resolve()
     PROJECT_DIR    = args.project_dir.resolve()
     MAVEN_ROOT     = PROJECT_DIR
@@ -426,7 +427,6 @@ def main() -> None:
 
     load_dotenv(REPO_ROOT / ".env")
 
-    global MAX_COMPILE_ITERATIONS
     MAX_COMPILE_ITERATIONS = int(os.environ.get("MAX_COMPILE_ITERATIONS", "3"))
 
     endpoint = os.environ.get("AZURE_INFERENCE_ENDPOINT", "").rstrip("/")

@@ -542,6 +542,8 @@ def run_spectral_lint_phase(spec_yaml: str, spectral_cmd: list[str]) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    global GOVERNANCE_DIR, PROJECT_DIR, GENERATED_DIR, OPENAPI_FILE, RULESET_FILE, JUNIT_FILE, STYLE_GUIDE_PATH, MAX_LINT_ITERATIONS
+
     parser = argparse.ArgumentParser(description="API & Integration Fitness Agent")
     parser.add_argument(
         "--codebase", type=pathlib.Path,
@@ -570,7 +572,6 @@ def main() -> None:
     # Allow --governance-dir and --project-dir to override module-level constants
     # so all downstream functions pick up the correct paths without requiring
     # them to be threaded through every call.
-    global GOVERNANCE_DIR, PROJECT_DIR, GENERATED_DIR, OPENAPI_FILE, RULESET_FILE, JUNIT_FILE, STYLE_GUIDE_PATH
     GOVERNANCE_DIR   = args.governance_dir.resolve()
     PROJECT_DIR      = args.project_dir.resolve()
     GENERATED_DIR    = PROJECT_DIR / "generated-specs"
@@ -585,7 +586,6 @@ def main() -> None:
 
     load_dotenv(REPO_ROOT / ".env")
 
-    global MAX_LINT_ITERATIONS
     MAX_LINT_ITERATIONS = int(os.environ.get("MAX_LINT_ITERATIONS", "3"))
 
     spectral_cmd = resolve_spectral()
