@@ -43,7 +43,7 @@ rules:
         notMatch: "^(get|fetch|find|search|list|read|Get|Fetch|Find|Search|List|Read|GET|FETCH|FIND|SEARCH|LIST|READ)"
 
   qsr-post-returns-201:
-    message: "§4: POST operations must declare a 201 Created response."
+    message: "§4: POST operations must declare a 201 Created response. Declared responses: {{value}}"
     description: "Resource creation via POST must return 201."
     severity: error
     given: "$.paths[*].post.responses"
@@ -56,7 +56,7 @@ rules:
             - "201"
 
   qsr-delete-returns-204:
-    message: "§4: DELETE operations must declare a 204 No Content response."
+    message: "§4: DELETE operations must declare a 204 No Content response. Declared responses: {{value}}"
     description: "Deletes return 204 with no body."
     severity: error
     given: "$.paths[*].delete.responses"
