@@ -6,6 +6,43 @@
 
 ---
 
+## Run Commands Reference
+
+```bash
+# Pre-demo: run everything once, opens HTML report (takes a few minutes)
+cd architecture-skill-demo
+python3 run_tests.py
+
+# Act 2 — show raw ArchUnit failures in terminal
+cd ..          # project root
+mvn test
+
+# Act 5 — re-run during demo (fast — structural cache hits, API re-scans)
+cd architecture-skill-demo
+python3 run_tests.py
+
+# Regenerate report only, no agent calls
+python3 run_tests.py --no-run
+
+# Run a single agent
+python3 run_tests.py --structural
+python3 run_tests.py --api
+
+# Demo: ADR changed → structural tests regenerate
+# (edit any file in inputs/adrs/ — governance hash changes, auto-triggers)
+python3 run_tests.py --structural
+# or force without editing:
+python3 structural_fitness_agent.py --refresh-tests
+
+# Demo: API style guide changed → Spectral ruleset regenerates
+# (edit inputs/specs/api-style-guide.md — SHA changes, auto-triggers)
+python3 run_tests.py --api
+# or force without editing:
+python3 api_fitness_agent.py --refresh-ruleset
+```
+
+---
+
 ## Before You Start — Setup Checklist
 
 - [ ] `python3 run_tests.py` has been run and the HTML report is open in a browser tab
