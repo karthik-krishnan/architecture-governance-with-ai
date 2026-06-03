@@ -58,9 +58,10 @@ breach, a cross-context import, or a missing API version prefix.
 
 | # | Where | What | Rule broken |
 |---|-------|------|-------------|
-| 1 | `OrderController` | Injects and calls `OrderRepository` directly | Controller must not access repository |
-| 2 | `OrderService` | Imports concrete `PaymentGatewayClient` | Application must use abstractions |
-| 3 | `OrderService` | Imports `LoyaltyRepository` from another context | Bounded contexts must not share repositories |
+| 1 | `OrderController` | Injects and calls `OrderRepository` directly | ADR-003: Controller must not access repository layer |
+| 2 | `OrderService` | Imports concrete `PaymentGatewayClient` | ADR-003: Application layer must not depend on infrastructure implementations |
+| 3 | `OrderService` | Imports `LoyaltyRepository` from another context | ADR-001: Bounded contexts must not share repositories |
+| 4 | `PaymentGatewayClient` | Uses `RestTemplate` instead of `WebClient` | ADR-017: RestTemplate is banned — bypasses platform circuit breakers and tracing |
 
 ### API violations (Spectral catches these)
 
