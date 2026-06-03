@@ -94,6 +94,13 @@ def short_name(classname: str) -> str:
 
 def parse_violations(cdata: str) -> list[str]:
     violations = []
+    cycle_path: list[str] = []   # accumulate "Slice X ->" fragments into one line
+
+    def flush_cycle():
+        if cycle_path:
+            violations.append(" ".join(cycle_path))
+            cycle_path.clear()
+
     for raw in cdata.strip().splitlines():
         line = raw.strip()
         if not line:
@@ -101,6 +108,20 @@ def parse_violations(cdata: str) -> list[str]:
         if (line.startswith("at ") or line.startswith("java.lang.")
                 or line.startswith("Caused by:") or line.startswith("... ")):
             continue
+        # ArchUnit cycle detection emits the cycle path across several lines:
+        #   "Cycle detected: Slice X ->"
+        #   "Slice Y ->"
+        #   "Slice X"           ← last segment without arrow
+        # Followed by numbered dependency detail lines we drop.
+        if line.startswith("Cycle detected:") or (cycle_path and line.startswith("Slice ")):
+            cycle_path.append(line)
+            if not line.endswith("->"):
+                flush_cycle()   # last segment reached — emit the complete path
+            continue
+        if cycle_path and re.match(r"^\d+\.", line):   # numbered dependency detail
+            flush_cycle()
+            continue
+        flush_cycle()
         if line.startswith(("Method ", "Field ", "Constructor ", "Class ")):
             for part in line.split(" and "):
                 part = part.strip()
@@ -108,6 +129,8 @@ def parse_violations(cdata: str) -> list[str]:
                     violations.append(part)
         else:
             violations.append(line)
+
+    flush_cycle()
     return violations
 
 
