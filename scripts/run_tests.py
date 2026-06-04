@@ -32,17 +32,16 @@ import webbrowser
 import xml.etree.ElementTree as ET
 from urllib.parse import unquote
 
-SCRIPTS_DIR     = pathlib.Path(__file__).parent
-REPO_ROOT       = SCRIPTS_DIR.parent
-GOVERNANCE_DIR  = REPO_ROOT / "example-company" / "architecture"
-PROJECT_DIR     = REPO_ROOT / "example-company" / "projects" / "example-service"
-REPORTS_DIR     = PROJECT_DIR / "target" / "surefire-reports"
-GENERATED_SPECS = PROJECT_DIR / "generated-specs"
-OUTPUT_DIR      = REPO_ROOT / "outputs"
-OUTPUT_HTML     = OUTPUT_DIR / "governance-report.html"
+SCRIPTS_DIR = pathlib.Path(__file__).parent
+REPO_ROOT   = SCRIPTS_DIR.parent
 
-RULESET_FILE    = GOVERNANCE_DIR / "spectral-ruleset.yaml"
-JUNIT_FILE      = GENERATED_SPECS / "spectral-junit.xml"
+# Argparse defaults — only used as default= values; all paths are re-derived
+# from --governance-dir / --project-dir in main() before any function is called.
+_DEFAULT_GOVERNANCE_DIR = REPO_ROOT / "example-company" / "architecture"
+_DEFAULT_PROJECT_DIR    = REPO_ROOT / "example-company" / "projects" / "example-service"
+
+OUTPUT_DIR  = REPO_ROOT / "outputs"
+OUTPUT_HTML = OUTPUT_DIR / "governance-report.html"
 
 MAX_VIOLATIONS_SHOWN = 5
 
@@ -322,8 +321,7 @@ def load_spectral_report(xml_path: pathlib.Path,
             rule_violations.setdefault(rule_id, []).append(detail)
 
     # Read all rule IDs from the committed ruleset so we can show passing rules too
-    effective_ruleset = ruleset_path if ruleset_path is not None else RULESET_FILE
-    all_rule_ids = load_ruleset_rule_ids(effective_ruleset)
+    all_rule_ids = load_ruleset_rule_ids(ruleset_path) if ruleset_path is not None else []
 
     if all_rule_ids:
         # Failing rules first (prominent), then passing rules
@@ -747,14 +745,14 @@ def main() -> None:
     parser.add_argument(
         "--governance-dir",
         type=pathlib.Path,
-        default=GOVERNANCE_DIR,
+        default=_DEFAULT_GOVERNANCE_DIR,
         help="Path to EA governance directory containing adrs/ and standards/ "
              "(default: example-company/architecture)",
     )
     parser.add_argument(
         "--project-dir",
         type=pathlib.Path,
-        default=PROJECT_DIR,
+        default=_DEFAULT_PROJECT_DIR,
         help="Path to the Maven project root to scan and test "
              "(default: example-company/projects/example-service)",
     )
