@@ -297,14 +297,16 @@ def load_spectral_report(xml_path: pathlib.Path,
     for tc in suite_el.findall("testcase"):
         raw_name = tc.attrib.get("name", "unknown")
 
-        # Split rule id from the JSON pointer location embedded in the name
+        # Split rule id from the JSON pointer location embedded in the name.
+        # Spectral prefixes every rule id with "org.spectral." in JUnit output —
+        # strip it so the id matches the YAML ruleset keys (e.g. "qsr-api-versioned-paths").
         loc_match = re.match(r'^(.+?)\((.+)\)$', raw_name)
         if loc_match:
-            rule_id  = loc_match.group(1)          # e.g. "org.spectral.qsr-api-versioned-paths"
-            json_ptr = loc_match.group(2)           # e.g. "#/paths/~1orders/post/responses"
+            rule_id  = re.sub(r'^org\.spectral\.', '', loc_match.group(1))
+            json_ptr = loc_match.group(2)
             location = decode_spectral_location(json_ptr)
         else:
-            rule_id  = raw_name
+            rule_id  = re.sub(r'^org\.spectral\.', '', raw_name)
             json_ptr = ""
             location = ""
 
