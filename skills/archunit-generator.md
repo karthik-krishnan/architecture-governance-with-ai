@@ -360,14 +360,18 @@ static final ArchRule FF_SEC_NO_CUSTOM_JWT =
 
 ### Cross-Context Import Rules
 
+Generate one rule per context pair found in the codebase. The cycle check (`beFreeOfCycles`) only catches *bidirectional* dependencies — a one-way import from context A into context B's internals passes the cycle check. You must add an explicit prohibition rule for every such cross-context dependency.
+
 ```java
-// ADR-001: bounded contexts must not import each other's internals
+// ADR-001: bounded contexts must not import each other's internals.
+// One rule per context pair — adapt package names to the actual contexts present.
 @ArchTest
-static final ArchRule FF_001_NO_CROSS_CONTEXT_ORDER_TO_LOYALTY =
+static final ArchRule FF_001_orders_must_not_directly_depend_on_loyalty =
     noClasses()
-        .that().resideInAPackage("com.example.restaurant..")
+        .that().resideInAPackage("com.example.orders..")
         .should().dependOnClassesThat().resideInAPackage("com.example.loyalty..")
-        .because("ADR-001: The Order context must not directly reference the Loyalty context. Use async events or a shared anti-corruption layer.");
+        .because("ADR-001: The orders context must not directly reference the loyalty context's internals. " +
+                 "Cross-context communication must go through published APIs or async domain events.");
 ```
 
 ---
